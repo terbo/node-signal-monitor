@@ -55,7 +55,7 @@ gpsd.on('disconnected', function () {
 })
 
 gpsd.connect(function() {
-  console.log(`Connected to GPSD ${cfg.sensor.gpsd.address}:${cfg.sensor.gpsd.port}`)
+  console.log(`Connected to GPSD ${cfg.sensor.gpsd.hostname}:${cfg.sensor.gpsd.port}`)
   gpsd.watch()
 })
 

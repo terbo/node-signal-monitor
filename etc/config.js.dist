@@ -25,6 +25,7 @@ const config = {
         },
         
         ws: {
+          //port: 8989,
           port: 8989,
           subscribe_interval: 4500,
           ping_interval: 30000,
@@ -33,12 +34,12 @@ const config = {
     
     sensor: {
         gpsd: {
-          address: '127.0.0.1',
+          hostname: '127.0.0.1',
           port: 2947,
         },
         
         ws: {
-          server: 'ws://127.0.0.1:9991/ws',
+          server: 'ws://127.0.0.1:8989/ws',
           host: '127.0.0.1',
           port: '8989',
           url: '/ws',
