@@ -37,7 +37,7 @@ server:
 
 sensor:
 ```text
-  configure gpsd, pointing it toward [BlueNMEA](https://github.com/MaxKellermann/BlueNMEA), for instance.
+  configure gpsd, pointing it toward the BlueNMEA or Share GPS mobile apps, for instance.
   configure wireless interface, setting it to monitor mode
   run bin/sensor.js
 ```
