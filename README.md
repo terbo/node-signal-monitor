@@ -22,22 +22,25 @@ node-red leaflet map           -- |
 
 Incomplete code, beware.
 
-
+configure:
+```text
 copy etc/config.js.dist to config.js and edit
 install node-red flow and dependent modules
 edit the configuration in the 'default configuration' node
-
+```
 
 server:
+```text
   pm2 install bin/wss.js
   pm2 start bin/wss.js
-
+```
 
 sensor:
-  configure gpsd, pointing it toward (BlueNMEA)[https://github.com/MaxKellermann/BlueNMEA], for instance.
+```text
+  configure gpsd, pointing it toward [BlueNMEA](https://github.com/MaxKellermann/BlueNMEA), for instance.
   configure wireless interface, setting it to monitor mode
   run bin/sensor.js
-
+```
 
 after the flow is deployed, the map will be available at your node-red URL with the endpoint /map.
 
