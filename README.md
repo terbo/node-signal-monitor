@@ -24,6 +24,7 @@ Incomplete code, beware.
 
 configure:
 ```text
+npm install
 copy etc/config.js.dist to config.js and edit
 install node-red flow and dependent modules
 edit the configuration in the 'default configuration' node
