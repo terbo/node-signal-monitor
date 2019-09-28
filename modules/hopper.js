@@ -29,7 +29,7 @@ function set_channel(c) {
 
   function checkexit(code) {
     if(code != 0) {
-      console.error(`Setting channel: ${e} (${output})`)
+      console.error(`Setting channel: (${output})`)
       process.exit()
     }
 	}
