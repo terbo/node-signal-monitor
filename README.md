@@ -23,7 +23,7 @@ node-red leaflet map           -- |
 ![wifi map](doc/sigmonmap-flow.png)
 
 Currently this flow is primarily for mapping devices while traveling.
-Node-red is currently configured to save context data to disk.
+Node-red is configured to save context data to disk, but right now nothing else is saved.
 The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap) node.
 
 TODO:
