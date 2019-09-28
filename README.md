@@ -20,8 +20,9 @@ node-red leaflet map           -- |
 
 
 TODO:
-[ ] Learn to code
-[ ] Figure out node-pcap build issues
-[ ] Add NeDB as buffer to MongoDB
+- [ ] Learn to code
+- [ ] Easier way to launch/maintain daemons (pm2?)
+- [ ] Figure out node-pcap build issues
+- [ ] Add NeDB as buffer to MongoDB
 
 This is a continuation of the fascination begun with [sigmon](http://github.com/terbo/sigmon).
