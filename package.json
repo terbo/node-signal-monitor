@@ -4,26 +4,12 @@
     "version": "0.0.1",
     "private": true,
     "dependencies": {
-        "asciichart": "^1.5.9",
-        "cli-chart": "^0.3.1",
-        "clui": "^0.3.6",
         "colors": "*",
         "console-stamp": "^0.2.9",
-        "dns": "^0.2.2",
-        "evilscan": "^1.7.5",
-        "get-pixels": "^3.3.2",
-        "humanize-duration": "^3.20.1",
-        "local-network-scanner": "^0.2.0",
-        "nedb": "^1.8.0",
         "node-gpsd": "*",
         "oui": "^10.0.22",
         "pcap": "file:node_modules/pcap",
         "socketwatcher": "file:node_modules/pcap/node_modules/socketwatcher",
-        "sudo": "^1.0.3",
-        "table": "^5.4.6",
-        "terminal-kit": "^1.31.4",
-        "vivagraphjs": "^0.10.1",
-        "wireless-tools": "^0.19.0",
         "ws": "*"
     }
 }
