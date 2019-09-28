@@ -46,7 +46,7 @@ function packet_cb(pkt) {
       for(var tag in rf.probe.tags) {
         tags = rf.probe.tags[tag]
       
-        if(tags.type == 'ssid' && taygs.ssid.length)
+        if(tags.type == 'ssid' && tags.ssid.length)
           p.ssid = tags.ssid
         }
     } // TODO: Other packet filters
