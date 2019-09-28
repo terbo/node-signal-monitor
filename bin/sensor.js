@@ -1,8 +1,12 @@
+#!/usr/bin/env node
+
+const version = '0.0.1'
+
 var cfg = require('../etc/config')
 
-const fs = require('fs'),
-      os = require('os'),
-      pcap = require('pcap')
+const fs        = require('fs'),
+      os        = require('os'),
+      pcap      = require('pcap')
       WebSocket = require('ws')
       node_gpsd = require('node-gpsd')
 
@@ -14,26 +18,26 @@ var gpsd_reconnect = 1
 
 var gpsd = new node_gpsd.Listener(cfg.sensor.gpsd)
 
-var cur_loc = {lon: 0, lat: 0, time: 0, sats: 0, acc: 0, heading: 0}
+var location = {lon: 0, lat: 0, time: 0, sats: 0, acc: 0, heading: 0}
 
 gpsd_events.forEach(function(ev) {
   gpsd.on(ev.toUpperCase(), function(data) {
     try {
       if(data.class == 'SKY') {
         //console.log(`Got Satellites: ${data.satellites.length}`)
-        cur_loc.sats = Number(data.satellites.length)
+        location.sats = Number(data.satellites.length)
       }
       if(data.class == 'TPV' && data.mode == 3) {
-        cur_loc.lon = data.lon
-        cur_loc.lat = data.lat
-        cur_loc.time = data.time
+        location.lon = data.lon
+        location.lat = data.lat
+        location.time = data.time
 
         if(data.hasOwnProperty('speed'))
-          cur_loc.speed = data.speed
+          location.speed = data.speed
         if(data.hasOwnProperty('alt'))
-          cur_loc.alt  = data.alt
+          location.alt  = data.alt
         if(data.hasOwnProperty('track'))
-          cur_loc.track = data.track
+          location.track = data.track
       } else {
         //console.info(data)
       }
@@ -76,8 +80,8 @@ function packet_cb(pkt) {
       
       p = {}
 
-      p.lon = cur_loc.lon
-      p.lat = cur_loc.lat
+      p.lon = location.lon
+      p.lat = location.lat
       p.len = packet.pcap_header.len
       p.sensor = hostname
       p.type = rf.type
@@ -117,7 +121,7 @@ function packet_cb(pkt) {
     if(p !== undefined) {
       msg = JSON.stringify({type: 'data', interface: cfg.sensor.interface,
                             sensor: hostname,
-                            location: cur_loc, data: p})
+                            location: location, data: p})
       ws.send(msg)
     } 
   } catch (e) {
@@ -158,5 +162,6 @@ ws.on('message', function (message) {
   // type: get/set
   // type: status
   // type: log
-  console.log(`Message: ${message}`)
+  const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+  console.log(`Message from ${id}: ${message}`)
 })

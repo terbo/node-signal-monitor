@@ -18,9 +18,21 @@ node-red leaflet map           -- |
 
 ![wifi map](doc/wifimap.png)
 
+# node red map
+
+![wifi map](doc/sigmonmap-flow.png)
+
+Currently this flow is primarily for mapping devices while traveling.
+Node-red is currently configured to save context data to disk.
+The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap) node.
 
 TODO:
 - [ ] Learn to code
+- [x] Convert node-red code to new format and publish flow
+- [x] Clarify package requirements, still testing
+- [ ] Fix 'empty' SSIDs
+- [ ] File logging
+- [ ] Simple console UI
 - [ ] Easier way to launch/maintain daemons (pm2?)
 - [ ] Figure out node-pcap build issues
 - [ ] Add NeDB as buffer to MongoDB

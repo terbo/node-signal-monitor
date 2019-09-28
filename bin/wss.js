@@ -1,41 +1,45 @@
+#!/usr/bin/env node
+
 const version = '0.0.1'
 
 var cfg = require('../etc/config.js')
 
-const fs       = require('fs'),
-      os       = require('os'),
-     oui       = require('oui')
-     colors    = require('colors'),
-     process   = require('process'),
-     WebSocket = require('ws'),
+const fs        = require('fs'),
+      os        = require('os'),
+      oui       = require('oui')
+      colors    = require('colors'),
+      process   = require('process'),
+      WebSocket = require('ws')
 
-//const logger = require('../modules/logger.js')
-require('console-stamp')(console, [{}]);
- 
-colors.setTheme({
-  intro: 'rainbow',
-  info: 'green',
-  status: 'cyan',
-  ap: 'yellow',
-  sta: 'white',
-  debug: 'grey',
-  error: 'red'
-});
+var clients = [] // need to linnk this to sensors..
 
 var data = {
   devs: {ap: [], sta: [], ssid: []},
   db: {},
   sensors: {},
-  stats: { packets: 0, errors: 0, runtime: 0, cpu: 0, memory: 0, aps: 0, ssids: 0, stas: 0},
+  location: {lon: 0, lat: 0},
+  stats: { packets: 0, errors: 0, runtime: 0, cpu: 0,
+           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0
+         },
   info: { start_time: new Date(), port: cfg.server.ws.port,
           hostname: os.hostname(), versions: process.versions,
           user: os.userInfo(), pid: process.pid, version: version
-          },
+         },
 }
 
-console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`.intro)
+//const logger = require('../modules/logger.js')
+require('console-stamp')(console, [{}]);
+ 
+colors.setTheme({
+  status: 'cyan',
+  info:   'green',
+  debug:  'grey',
+  error:  'red',
+  sta:    'white',
+  ap:     'yellow',
+});
 
-var clients = [] // need to linnk this to sensors..
+console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`.rainbow)
 
 function updateStats() {
   data.stats.aps = data.devs.ap.length
@@ -46,16 +50,14 @@ function updateStats() {
   data.stats.memory = process.memoryUsage()
   data.stats.runtime = process.uptime()
   data.stats.uptime = os.uptime()
-
-  return data.stats
 }
 
 function newDevice(pkt) {
-  res = get_vendor(p.mac)
+  const vendor = get_vendor(pkt.mac)
   
-  p.vendor = res[0]
-  p.vendorSm = res[1]
-  p.macSm = p.mac.substr(12,14).replace(':','')
+  pkt.vendor = vendor[0]
+  pkt.vendorSm = vendor[1]
+  pkt.macSm = pkt.mac.substr(12,14).replace(':','')
   
   var tmp = { 
       type: null, // ap, sta
@@ -92,13 +94,14 @@ function newDevice(pkt) {
 }
 
 function get_vendor(mac) {
-  res = oui(mac)
+  const res = oui(mac)
   
   if(res !== null) {
     try {
-      vendor = res.split('\n')[0]
-      sp = vendor.split(' ')
-      vendorSm = sp[0].substr(0,7)
+      var vendor = res.split('\n')[0]
+      var sp = vendor.split(' ')
+      var vendorSm = sp[0].substr(0,7)
+      
       if(sp.length > 1)
           vendorSm += sp[1].substr(0,1).toUpperCase() + sp[1].substr(1,2)
       return [vendor, vendorSm]
@@ -111,9 +114,10 @@ function get_vendor(mac) {
 
 function read_packet(msg) {
   try {
-    p = msg.data
-    cur_loc = msg.location
-    sensor = msg.sensor
+    var p = msg.data
+    var sensor = msg.sensor
+    
+    data.location = msg.location
     
     if(data.sensors.hasOwnProperty(sensor))
       data.sensors[sensor] += 1
@@ -130,11 +134,11 @@ function read_packet(msg) {
 
         data.db[p.mac].location = {lon: p.lon, lat: p.lat}
         data.db[p.mac].seen.last = p.time
-        data.db[p.mac].rssi.last = {lon: p.lon, lat: p.lat}
+        data.db[p.mac].rssi.last = p.rssi
         // history? sensors? rssi ring buffer?
     } else if(p.type == 2) { // data packet
-      dst = p.dst
-      src = p.src
+      var dst = p.dst
+      var src = p.src
       
       if(data.devs.ap.includes(src)) {
         data.db[src].hosts[dst] = get_vendor(dst)[0]
@@ -158,9 +162,11 @@ function read_packet(msg) {
 
 function latest(since) {
 	var out = {}
+  updateStats()
+
 	Object.keys(data.db).forEach(function(k) {
 		const dev = data.db[k]
-		now = new Date() / 1000
+		const now = new Date() / 1000
 
 		if(dev.seen.hasOwnProperty('last')) {
 			if((now) < (dev.seen.last + (since / 1000))) {
@@ -168,7 +174,7 @@ function latest(since) {
 			}
 		}
 	})
-	return out
+  return {db: out}
 }
 
 function noop() {}
@@ -197,6 +203,7 @@ wss.on('connection', function connection(ws, req) {
   
   ws.on('message', function incoming(message) {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+    //console.info(`Message from ${id}: ${message}`.debug)
     
     const msg = JSON.parse(message)
     clients[id].lastseen = new Date()
@@ -223,29 +230,41 @@ wss.on('connection', function connection(ws, req) {
         }
       } else
       if (msg.cmd == 'latest') {
-        ws.send(JSON.stringify({ type: 'latest', time: new Date(), data: latest(300 * 1000)}))
+        ws.send(JSON.stringify({ type: 'latest', location: data.location,
+                                 time: new Date(), data: latest(5000)}))
       } else
       if (msg.cmd == 'status') {
-        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: updateStats()}))
+        updateStats()
+        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: data}))
       } else
       if (msg.cmd == 'dump') {
+        updateStats()
         ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
       } else
       if (msg.cmd == 'subscribe') {
+        console.info(`New Subscriber: ${id}`.rainbow)
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
         if(msg.hasOwnProperty('arg')) {
-          if(msg.arg == null)
+          if(msg.arg !== null)
             var interval = msg.arg
         }
+        
+        // should client have to request state data then send another request for new data?
+        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
+        
         clients[id].timer = setInterval(function() {
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+          
           if (ws.readyState === WebSocket.OPEN) {
-            // for each device, if lastseen lesss than last msg, send?
-            ws.send(JSON.stringify({ type: 'recent', time: new Date(),
+            ws.send(JSON.stringify({ type: 'latest', time: new Date(),
+                                     location: data.location,
                                      data: latest(cfg.server.ws.subscribe_interval)}))
           } else {
+            console.warn(`Connection closed, terminating ${id}`)
+            
             ws.terminate()
+            
             if(clients[id].hasOwnProperty('timer')) {
               clearInterval(clients[id].timer)
               delete clients[id].timer

@@ -8,7 +8,9 @@ messages back and forth in this format:
 either msg.type or msg.cmd are required.
 
 message = {
-  type: data | log | status | time
+  type: client: [ data | log | status | time ]
+  type: server: [ dump | latest | status | location | time ]
+  
   cmd: dump | latest | status | stream | subscribe | unsubscribe
   args: [command arguments]
   data: [payload]
