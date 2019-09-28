@@ -18,19 +18,46 @@ node-red leaflet map           -- |
 
 ![wifi map](doc/wifimap.png)
 
+# usage
+
+Incomplete code, beware.
+
+
+copy etc/config.js.dist to config.js and edit
+install node-red flow and dependent modules
+edit the configuration in the 'default configuration' node
+
+
+server:
+  pm2 install bin/wss.js
+  pm2 start bin/wss.js
+
+
+sensor:
+  configure gpsd, pointing it toward (BlueNMEA)[https://github.com/MaxKellermann/BlueNMEA], for instance.
+  configure wireless interface, setting it to monitor mode
+  run bin/sensor.js
+
+
+after the flow is deployed, the map will be available at your node-red URL with the endpoint /map.
+
+
 # node red map
 
 ![wifi map](doc/sigmonmap-flow.png)
 
 Currently this flow is primarily for mapping devices while traveling.
 Node-red is configured to save context data to disk, but right now nothing else is saved.
-The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap) node.
+
+The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap)
+and [configuration](https://www.npmjs.com/package/node-red-contrib-config) nodes.
 
 TODO:
 - [ ] Learn to code
 - [x] Convert node-red code to new format and publish flow
 - [x] Clarify package requirements, still testing
-- [ ] Fix 'empty' SSIDs
+- [x] Fix 'empty' SSIDs
+- [ ] Enable listening on multiple interfaces
 - [ ] File logging
 - [ ] Simple console UI
 - [ ] Easier way to launch/maintain daemons (pm2?)

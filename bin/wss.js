@@ -2,14 +2,13 @@
 
 const version = '0.0.1'
 
-var cfg = require('../etc/config.js')
+var cfg  = require('../etc/config.js')
 
-const fs        = require('fs'),
-      os        = require('os'),
-      oui       = require('oui')
-      colors    = require('colors'),
-      process   = require('process'),
-      WebSocket = require('ws')
+const fs       = require('fs'),
+      os       = require('os'),
+      oui      = require('oui'),
+      WS       = require('ws'),
+      process  = require('process')
 
 var clients = [] // need to linnk this to sensors..
 
@@ -28,18 +27,8 @@ var data = {
 }
 
 //const logger = require('../modules/logger.js')
-require('console-stamp')(console, [{}]);
  
-colors.setTheme({
-  status: 'cyan',
-  info:   'green',
-  debug:  'grey',
-  error:  'red',
-  sta:    'white',
-  ap:     'yellow',
-});
-
-console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`.rainbow)
+console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`)
 
 function updateStats() {
   data.stats.aps = data.devs.ap.length
@@ -78,9 +67,9 @@ function newDevice(pkt) {
   
   if(pkt.type == 0 && pkt.subtype == 8) {
     tmp.type = 'ap'
-    console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi.last}`.ap)
+    console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi.last}`)
   } else {
-    //console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi.last}`.sta)
+    //console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi.last}`)
     tmp.type = 'sta'
   }
   
@@ -155,7 +144,7 @@ function read_packet(msg) {
   data.stats.packets += 1
   
   } catch (e) {
-    console.error(`Decode Packet: ${e}`.error)
+    console.error(`Decode Packet: ${e}`)
     data.stats.errors += 1
   }
 }
@@ -183,9 +172,9 @@ function heartbeat() {
   this.isAlive = true
 }
 
-const wss = new WebSocket.Server({ port: cfg.server.ws.port });
+const wss = new WS.Server({ port: cfg.server.ws.port });
  
-console.info(`Listening on port ${cfg.server.ws.port}`.info)
+console.info(`Listening on port ${cfg.server.ws.port}`)
 
 wss.on('connection', function connection(ws, req) {
   ws.isAlive = true
@@ -199,7 +188,7 @@ wss.on('connection', function connection(ws, req) {
   clients[id] = {mode: null, host: ip, port: port,
                  firstseen: new Date(), lastseen: new Date()}
 
-  console.info(`Connection from ${id}}`.debug)
+  console.info(`Connection from ${id}}`)
   
   ws.on('message', function incoming(message) {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
@@ -230,19 +219,26 @@ wss.on('connection', function connection(ws, req) {
         }
       } else
       if (msg.cmd == 'latest') {
+        var duration
+        
+        if(msg.hasOwnProperty('arg'))
+          duration = Number(msg.arg)
+        else
+          duration = cfg.server.latest_period
+        
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
-                                 time: new Date(), data: latest(5000)}))
+                                 time: new Date(), data: latest(duration)}))
       } else
       if (msg.cmd == 'status') {
         updateStats()
-        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: data}))
+        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: data.stats}))
       } else
       if (msg.cmd == 'dump') {
         updateStats()
         ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
       } else
       if (msg.cmd == 'subscribe') {
-        console.info(`New Subscriber: ${id}`.rainbow)
+        console.info(`New Subscriber: ${id}`)
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
         if(msg.hasOwnProperty('arg')) {
@@ -256,18 +252,22 @@ wss.on('connection', function connection(ws, req) {
         clients[id].timer = setInterval(function() {
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
           
-          if (ws.readyState === WebSocket.OPEN) {
+          if (ws.readyState === WS.OPEN) {
             ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                      location: data.location,
                                      data: latest(cfg.server.ws.subscribe_interval)}))
           } else {
             console.warn(`Connection closed, terminating ${id}`)
             
-            ws.terminate()
-            
-            if(clients[id].hasOwnProperty('timer')) {
-              clearInterval(clients[id].timer)
-              delete clients[id].timer
+            try {
+              ws.terminate()
+              
+              if(clients[id].hasOwnProperty('timer')) {
+                clearInterval(clients[id].timer)
+                delete clients[id].timer
+              }
+            } catch(e) {
+              console.log(`Terminating connection: ${e}`)
             }
           }
         }, cfg.server.ws.subscribe_interval)
@@ -279,7 +279,7 @@ wss.on('connection', function connection(ws, req) {
         }
       }
     } else {
-      console.error(`Invalid packet: ${msg}`.error)
+      console.error(`Invalid packet: ${msg}`)
     }
   })
 })

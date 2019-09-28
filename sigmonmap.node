@@ -4,7 +4,7 @@
         "type": "tab",
         "label": "Sigmon Map",
         "disabled": false,
-        "info": "Map WIFi devices.\n\nConnect to node websocket server which is sent wifi packets from various gps enabled sensors in monitor mode."
+        "info": "Map WIFi devices.\n\nConnect to node websocket service which is sent wifi packets from various gps enabled sensors in monitor mode."
     },
     {
         "id": "121741fa.42f22e",
@@ -49,8 +49,8 @@
         "id": "84a041b7.f2728",
         "type": "function",
         "z": "b417b444.a1e7d8",
-        "name": "HandleCmd",
-        "func": "const cfg = flow.get('cfg')\n\nif(msg.payload.hasOwnProperty('action')) {\n    if(msg.payload['action'] == 'connected') {\n        flow.set('map_connected', 1)\n        \n        var loc = flow.get('location')\n        if(loc === undefined)\n            loc = cfg.home\n        \n        const command = {'lat': loc.lat,\n                    'lon': loc.lon,\n                    'zoom': cfg.default_zoom,\n                    'layer': ['Esri Satellite'],\n                    'showlayer': ['roads','railways'],\n                    'button': { 'name': 'toggleMove', 'icon': 'fa-star'},\n            }\n        msg.payload.command = command\n        node.log('Map Connected')\n        return msg;\n    } else if (msg.payload['action'] == 'disconnected') {\n        node.error('Map Disconnected')\n        flow.set('map_connected', 0)\n    } else if( msg.payload['action'] == 'button') {\n        if(msg.payload['name'] == 'toggleMove')\n            cfg.move_map = !cfg.move_map\n    }\n}",
+        "name": "Process Map",
+        "func": "const cfg = flow.get('cfg')\n\nif(msg.payload.hasOwnProperty('action')) {\n    if(msg.payload['action'] == 'connected') {\n        flow.set('map_connected', 1)\n        \n        var location = flow.get('location')\n        if(location === undefined)\n            location = cfg.home\n        \n        const command = {'lat': location.lat,\n                    'lon': location.lon,\n                    'zoom': cfg.default_zoom,\n                    'layer': ['Esri Satellite'],\n                    'showlayer': ['roads','railways'],\n                    'button': { 'name': 'toggleMove', 'icon': 'fa-star'},\n            }\n        msg.payload.command = command\n        node.log('Map Connected')\n        return msg\n    } else if (msg.payload['action'] == 'disconnected') {\n        node.error('Map Disconnected')\n        flow.set('map_connected', 0)\n    } else if( msg.payload['action'] == 'button') {\n        if(msg.payload['name'] == 'toggleMove')\n            cfg.move_map = !cfg.move_map\n    }\n}",
         "outputs": 1,
         "noerr": 0,
         "x": 415,
@@ -65,12 +65,12 @@
         "id": "5140eb08.d4554c",
         "type": "function",
         "z": "b417b444.a1e7d8",
-        "name": "Draw Marker",
-        "func": "const cfg = flow.get('cfg')\nconst pkt = msg.payload\n\nvar macs = flow.get('macs')\n\nvar mac = pkt.mac\nvar name;\n\nif(macs.hasOwnProperty(pkt.mac)) {\n    if(macs[mac].location == pkt.location) {\n        return\n    }\n} else {\n    macs[mac] = { vendor: pkt.vendor,\n                  lat: pkt.location.lat,\n                  lon: pkt.location.lon,\n                  firstseen: new Date(),\n                  lastseen: new Date(),\n                  type: pkt.type,\n                  rssi: pkt.rssi.last,\n                }\n}\n\nif(pkt.ssid.length > 0)\n    name = pkt.ssid\nelse\n    name = pkt.macSm\n    \nconst intensity = (parseInt(pkt.rssi.last) + 100) * 0.01\n\nmsg.payload = {'name': name,\n               'lat': pkt.location.lat, 'lon': pkt.location.lon,\n               'ttl': cfg.ap_ttl,\n               'icon': 'fa-wifi',\n               'rssi': pkt.rssi.last,\n               'vendor': pkt.vendor,\n               'layer': pkt.type.toUpperCase(),\n               //'iconColor': cfg.ap_color,\n               'intensity': intensity\n}\n\nflow.set('macs',macs)\n\nreturn msg",
+        "name": "Draw Marker(s)",
+        "func": "const cfg = flow.get('cfg')\nconst pkt = msg.payload\n\nvar macs = flow.get('macs')\n\nvar mac = pkt.mac\nvar name;\n\nif(macs.hasOwnProperty(pkt.mac)) {\n    if((macs[mac].location == pkt.location) &&\n        macs[mac].rssi == pkt.rssi.last) {\n        return\n    } else {\n        macs[mac].rssi = pkt.rssi.last\n        macs[mac].location = pkt.location\n        macs[mac].lastseen = pkt.time\n    }\n} else {\n    macs[mac] = { vendor: pkt.vendor,\n                  lat: pkt.location.lat,\n                  lon: pkt.location.lon,\n                  firstseen: new Date(),\n                  lastseen: new Date(),\n                  type: pkt.type,\n                  rssi: pkt.rssi.last,\n                }\n}\n\nflow.set('macs',macs)\n\nconst intensity = (parseInt(pkt.rssi.last) + 100) * 0.01\nconst layer = (pkt.type == 'ap') ? 'Access Points' : 'Clients'\n\nmsg.payload = {'name': `${pkt.macSm} - ${pkt.vendorSm}`,\n               'lat': macs[mac].lat, 'lon': macs[mac].lon,\n               'ttl': cfg.ap_ttl,\n               'icon': 'fa-wifi',\n               'rssi': macs[mac].rssi,\n               'vendor': macs[mac].vendor,\n               'layer': layer,\n               'intensity': intensity\n}\n\nreturn msg",
         "outputs": 1,
         "noerr": 0,
-        "x": 640,
-        "y": 330,
+        "x": 650,
+        "y": 360,
         "wires": [
             [
                 "902fdb3e.ceba"
@@ -84,7 +84,7 @@
         "name": "",
         "depth": "150",
         "layer": "single",
-        "x": 650,
+        "x": 644,
         "y": 195,
         "wires": [
             [
@@ -93,30 +93,14 @@
         ]
     },
     {
-        "id": "b66083d6.f71cb8",
-        "type": "function",
-        "z": "b417b444.a1e7d8",
-        "name": "Subscribe",
-        "func": "var msg2 = {payload:{cmd: 'subscribe'}}\nreturn msg2",
-        "outputs": 1,
-        "noerr": 0,
-        "x": 495,
-        "y": 495,
-        "wires": [
-            [
-                "949896c5.99102"
-            ]
-        ]
-    },
-    {
         "id": "a3c31fa2.30427",
         "type": "function",
         "z": "b417b444.a1e7d8",
-        "name": "Get Location",
-        "func": "var msg2 = {}\n\nif(msg.payload.hasOwnProperty('location')) {\n    const lon = msg.payload.location.lon\n    const lat = msg.payload.location.lat\n    \n    flow.set('location', {\n        lat: lat,\n        lon: lon,\n    })\n    \n    msg2.payload =  {\n       'name': 'cb',\n       'lat': lat,\n       'lon': lon,\n       'icon': 'car', 'addtoheatmap': 'false',\n       'draggable': false, \n       'ttl': 720,\n       'layer': 'Me'\n    }\n}\nreturn [msg, msg2]",
+        "name": "Update Location",
+        "func": "var msg2 = {}\n\nif(msg.payload.hasOwnProperty('location')) {\n    const location = {lon: msg.payload.location.lon,\n                lat: msg.payload.location.lat}\n                \n    if(flow.get('location') == location)\n        return\n    \n    flow.set('location',location)\n\n    msg2.payload =  {\n       'name': 'Me',\n       'lat': location.lat,\n       'lon': location.lon,\n       'icon': 'car', 'addtoheatmap': 'false',\n       'draggable': false, \n       'ttl': 720,\n       'layer': 'Me'\n    }\n}\nreturn [msg, msg2]",
         "outputs": 2,
         "noerr": 0,
-        "x": 445,
+        "x": 455,
         "y": 195,
         "wires": [
             [
@@ -154,12 +138,12 @@
         "repeat": "",
         "crontab": "",
         "once": true,
-        "onceDelay": "2.2",
-        "x": 140,
-        "y": 495,
+        "onceDelay": "4",
+        "x": 380,
+        "y": 510,
         "wires": [
             [
-                "ae9a8a69.60a7a"
+                "877b1ac.aebe368"
             ]
         ]
     },
@@ -170,8 +154,8 @@
         "name": "WebSocket Out",
         "server": "",
         "client": "5ca850b4.53dc58",
-        "x": 693,
-        "y": 495,
+        "x": 721,
+        "y": 510,
         "wires": []
     },
     {
@@ -202,7 +186,7 @@
         "stream": false,
         "addname": "",
         "x": 476,
-        "y": 330,
+        "y": 360,
         "wires": [
             [
                 "5140eb08.d4554c"
@@ -231,8 +215,8 @@
         "checkall": "true",
         "repair": false,
         "outputs": 2,
-        "x": 174,
-        "y": 330,
+        "x": 178,
+        "y": 360,
         "wires": [
             [
                 "50f50628.3b91a8"
@@ -261,8 +245,8 @@
         "from": "",
         "to": "",
         "reg": false,
-        "x": 324,
-        "y": 330,
+        "x": 327,
+        "y": 360,
         "wires": [
             [
                 "e615ab45.e71168"
@@ -270,18 +254,53 @@
         ]
     },
     {
-        "id": "ae9a8a69.60a7a",
-        "type": "function",
+        "id": "9ab76e79.35848",
+        "type": "config",
         "z": "b417b444.a1e7d8",
-        "name": "Set Config",
-        "func": "const cfg = { audio: true,\n        speech: true,\n        status_interval: 30,\n        beacon_sleep: 7,\n        move_map: 1,\n        ap_ttl: 360,\n        ap_color: '#dddddd',\n        probe_ttl: 120,\n        probe_color: '#aaaaaa',\n        home: [0,0],\n        default_zoom: 18,\n        map_redraw: 5000,\n}\n\nflow.set('cfg',cfg)\nflow.set('log',[])\n\nif(!flow.get('macs'))\n  flow.set('macs',{})\n\nflow.set('stats',{\n    'probes': 0, 'beacons': 0, 'packets': 0,\n    'aps': 0, 'clients': 0, 'vendors': {}\n    }\n)\n\nreturn msg",
-        "outputs": 1,
-        "noerr": 0,
-        "x": 305,
-        "y": 495,
+        "name": "Default Configuration",
+        "properties": [
+            {
+                "p": "config",
+                "pt": "flow",
+                "to": "{\"audio\":true,\"speech\":true,\"status_interval\":30,\"beacon_sleep\":7,\"move_map\":1,\"ap_ttl\":360,\"ap_color\":\"#dddddd\",\"probe_ttl\":120,\"probe_color\":\"#aaaaaa\",\"home\":{\"lon\":\"\",\"lat\":\"\"},\"default_zoom\":18,\"map_redraw\":5000}",
+                "tot": "json"
+            },
+            {
+                "p": "macs",
+                "pt": "flow",
+                "to": "{}",
+                "tot": "json"
+            }
+        ],
+        "active": true,
+        "x": 160,
+        "y": 510,
+        "wires": []
+    },
+    {
+        "id": "877b1ac.aebe368",
+        "type": "change",
+        "z": "b417b444.a1e7d8",
+        "name": "subscribe",
+        "rules": [
+            {
+                "t": "set",
+                "p": "payload",
+                "pt": "msg",
+                "to": "{\"cmd\": \"subscribe\"}",
+                "tot": "json"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 530,
+        "y": 510,
         "wires": [
             [
-                "b66083d6.f71cb8"
+                "949896c5.99102"
             ]
         ]
     },
@@ -289,7 +308,7 @@
         "id": "5ca850b4.53dc58",
         "type": "websocket-client",
         "z": "",
-        "path": "ws://127.0.0.1:8989/ws",
+        "path": "ws://127.0.0.1/ws",
         "tls": "",
         "wholemsg": "false"
     }

@@ -15,6 +15,7 @@ const config = {
           max_size: 10000000,
           max_files: 1,
         },
+        
         db: {
           file: 'sigmonjs.db',
           server: '127.0.0.1:27017',
@@ -22,6 +23,7 @@ const config = {
           port: 27017,
           retain: 604800,
         },
+        
         ws: {
           port: 8989,
           subscribe_interval: 4500,
@@ -34,14 +36,25 @@ const config = {
           address: '127.0.0.1',
           port: 2947,
         },
+        
         ws: {
-          server: 'ws://127.0.0.1:8989/ws',
+          server: 'ws://127.0.0.1:9991/ws',
           host: '127.0.0.1',
-          port: 8989,
+          port: '8989',
           url: '/ws',
         },
-        interface: 'mon0',
+        
+        interface: 'mon0', //['wlan0mon','wlan1mon'],
+        reconnect: true,
     },
+    
+    hopper: {
+        hop: true,
+        channel: 1, // when not hopping
+        channels: 11,
+        dwell: 200, // airodump sleeps for 200ms..
+    },
+
     console: {
       use_color: true,
       use_curses: true,
