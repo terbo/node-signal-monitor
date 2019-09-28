@@ -25,7 +25,6 @@ const config = {
         },
         
         ws: {
-          //port: 8989,
           port: 8989,
           subscribe_interval: 4500,
           ping_interval: 30000,
@@ -53,7 +52,7 @@ const config = {
         hop: true,
         channel: 1, // when not hopping
         channels: 11,
-        dwell: 200, // airodump sleeps for 200ms..
+        dwell: 500, // airodump sleeps for 200ms..
     },
 
     console: {
