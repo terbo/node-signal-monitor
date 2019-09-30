@@ -43,7 +43,7 @@ sensor:
 configure gpsd, pointing it toward the BlueNMEA  
 or Share GPS mobile apps, for instance.  
 
-configure wireless interface, setting it to monitor mode  
+configure wireless interface, setting it to [monitor mode](https://wiki.wireshark.org/CaptureSetup/WLAN#Turning_on_monitor_mode)
 
 
 install pcap:  
@@ -56,13 +56,17 @@ npm install -g n
 n lts
 ```
 
-then, use the git versions of node_pcap and socketwatcher.  
+included in package.json are the git versions of [node_pcap](https://github.com/node-pcap/node_pcap) and [socketwatcher](https://github.com/bytzdev/node-socketwatcher).  
 after npm finishes, cd to the build directoy of each  
 package and issue a `make` command.  
 
-for more info check out the [pcap issues](https://github.com/node-pcap/node_pcap/issues) page.
+for more info check out the [node_pcap issues](https://github.com/node-pcap/node_pcap/issues) page.  
 
-`pm2 start bin/sensor.js`
+start the sensor:
+
+```text
+pm2 start bin/sensor.js
+```
 
 after the flow is deployed, the map will be available at your node-red URL with the endpoint */map*.  
 
@@ -74,9 +78,10 @@ after the flow is deployed, the map will be available at your node-red URL with 
 The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap)
 and [configuration](https://www.npmjs.com/package/node-red-contrib-config) nodes.  
 
-Currently this flow is primarily for mapping devices while traveling.  
+Currently this flow primarily functions well when mapping devices noticed while traveling.  
 Node-red is configured to save context data to disk, but right now nothing else is saved.  
-_its just a phase._
+_its just a phase._  
+
 
 
 TODO:
