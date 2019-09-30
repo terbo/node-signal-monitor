@@ -47,9 +47,8 @@ configure wireless interface, setting it to [monitor mode](https://wiki.wireshar
 
 
 install pcap:  
-node_pcap requires the LTS version of nodejs - 10.16.3.  
-Using `n` is recommended to manage multiple installed  
-versions of npm.  
+node_pcap requires libpcap-dev for pcap.h, and the LTS version of nodejs - 10.16.3.  
+Using `n` is recommended to manage multiple installed versions of npm.  
 
 ```text
 npm install -g n
