@@ -106,9 +106,8 @@ This is a continuation of the fascination begun with [sigmon](https://github.com
 [node-red](https://https://nodered.org/): a programming tool for wiring together hardware devices, APIs and online services in new and interesting ways.  
 [node-gpsd](https://github.com/eelcocramer/node-gpsd): Node.js gpsd client for GPS tracking device.  
 [node_pcap](https://github.com/node-pcap/node_pcap): libpcap bindings for node  
-[oui]https://github.com/silverwind/oui))
+[oui](https://github.com/silverwind/oui): Look up MAC addresses for their vendor in the IEEE OUI database  
 [reconnecting-websocket](https://github.com/pladaria/reconnecting-websocket): Reconnecting WebSocket. For Web, React Native, cli (Node.js)  
 [ws](https://github.com/websockets/ws): Simple to use, blazing fast and thoroughly tested WebSocket client and server for Node.js  
 
 
-# much metta
