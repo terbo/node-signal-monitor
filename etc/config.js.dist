@@ -1,22 +1,23 @@
 const config = {
     server: {
-        max_devices: 0,
-        device_prune: false,
-        session_length: 260000,
+        max_devices: 0,                 /*   *TODO* Maximum number of devices to remember. */
+        device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
+        session_length: 260000,         /*   *TODO* How many microseconds after a device is noticed
+                                             do we wait to begin a session? 4 minutes is the default.*/
         
-        enable_http: false,
-        enable_websocket: true,
+        enable_http: false,             /*   *TODO* Enable web server for UI? */
+        enable_websocket: true,         /*   Service connection to sensors and web clients/etc. */
 
-        use_ssl: false,
+        use_ssl: false,                 /*   *TODO* Perhaps we'll use SSL, and authenticate clients, etc. */
 
-        log: {
-          level: 'info',
+        log: {                          /*   Right now pm2 handles logs, this is for our own logging module */
+          level: 'info',                
           file: '../wss.log',
           max_size: 10000000,
           max_files: 1,
         },
         
-        db: {
+        db: {                           /*   *TODO* NeDB or MongoDB information */
           enabled: false,
           file: 'sigmonjs.db',
           server: '127.0.0.1:27017',
@@ -26,19 +27,20 @@ const config = {
         },
         
         ws: {
-          port: 8989,
-          subscribe_interval: 4500,
-          ping_interval: 30000,
+          port: 8989,                   
+          subscribe_interval: 4500,     /*   How often do we publish results to subscribers? */
+          ping_interval: 30000,         /*   No longer used */
         },
     },
     
     sensor: {
-        interface: 'mon0', //['wlan0mon','wlan1mon'],
-        reconnect: true,
+        interface: 'mon0',              /*   *TODO* figure out how to pass the interface upon capture
+                                             through the packet callback. Or wait for node-pcapng     */
+        reconnect: true,                /*   Default is to reconnect indefinitally */
         
-        gps: {
-          enabled: true,
-          hostname: '127.0.0.1',
+        gps: {                          /*   If one sensor manages multiple interfaces, how would we  */
+          enabled: true,                /*   distinguish their location/orientation, e.g. having two  */
+          hostname: '127.0.0.1',        /*   directional antennas for gleaning better location info?  */
           port: 2947,
         },
         
@@ -50,14 +52,15 @@ const config = {
         },
     },
     
-    hopper: {
+    hopper: {                           /*  spawn/exec based channel hopper for devices with 'iwconfig'     */
         enabled: true,
-        channel: 1, // when not hopping
-        channels: 11,
-        dwell: 500, // airodump sleeps for 200ms..
+        channel: 1,                     /*  Fixed channel used when not hopping */
+        channels: 11,                   /*  1-11 in the US, 1-13 other places. Other frequencies coming..   */
+        dwell: 500,                     /*  airodump sleeps for 200ms, but here running iwconfig repeatedly */
+                                        /*  some machines get bogged down */
     },
 
-    console: {
+    console: {                          /*  Maybe some settings for the blessed/ncurses UI */
       use_color: true,
       use_curses: true,
       status_interval: 60000,
