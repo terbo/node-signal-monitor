@@ -40,8 +40,7 @@ pm2 start bin/wss.js
 ```
 
 sensor:  
-configure gpsd, pointing it toward the BlueNMEA  
-or Share GPS mobile apps, for instance.  
+configure gpsd, pointing it toward the BlueNMEA or Share GPS mobile apps, for instance.  
 
 configure wireless interface, setting it to [monitor mode](https://wiki.wireshark.org/CaptureSetup/WLAN#Turning_on_monitor_mode)
 
@@ -56,7 +55,7 @@ n lts
 ```
 
 included in package.json are the git versions of [node_pcap](https://github.com/node-pcap/node_pcap) and [socketwatcher](https://github.com/bytzdev/node-socketwatcher).  
-after npm finishes, cd to each build directoy located in `<this package>/node_modules/<package>/build>`  
+after npm finishes, you may need to cd to each build directoy located in `<this package>/node_modules/<package>/build>`  
 and issue `make`.  
 
 for more info check out the [node_pcap issues](https://github.com/node-pcap/node_pcap/issues) page.  
