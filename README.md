@@ -91,10 +91,24 @@ TODO:
 - [x] Fix 'empty' SSIDs
 - [x] Easier way to launch/maintain daemons (pm2?)
 - [x] Figure out node-pcap build issues
-- [x] Handle disconnections/crashes/poor connections - bad GPS packets still crash though.
+- [x] Handle disconnections/crashes/poor connections
 - [ ] Enable listening on multiple interfaces
 - [ ] File logging - pm2 keeps logs, but need to finish custom logger.js
 - [ ] Simple console UI - trying blessed contrib - lacks in interactivity but might work
 - [ ] Add NeDB as buffer to MongoDB
+- [ ] Add OUI Update
+- [ ] Handle bad GPS packets
 
-This is a continuation of the fascination begun with [sigmon](http://github.com/terbo/sigmon).
+This is a continuation of the fascination begun with [sigmon](https://github.com/terbo/sigmon).
+
+
+# node modules
+[node-red](https://https://nodered.org/): a programming tool for wiring together hardware devices, APIs and online services in new and interesting ways.  
+[node-gpsd](https://github.com/eelcocramer/node-gpsd): Node.js gpsd client for GPS tracking device.  
+[node_pcap](https://github.com/node-pcap/node_pcap): libpcap bindings for node  
+[oui]https://github.com/silverwind/oui))
+[reconnecting-websocket](https://github.com/pladaria/reconnecting-websocket): Reconnecting WebSocket. For Web, React Native, cli (Node.js)  
+[ws](https://github.com/websockets/ws): Simple to use, blazing fast and thoroughly tested WebSocket client and server for Node.js  
+
+
+# much metta
