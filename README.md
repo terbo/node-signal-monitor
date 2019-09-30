@@ -57,7 +57,7 @@ n lts
 ```
 
 included in package.json are the git versions of [node_pcap](https://github.com/node-pcap/node_pcap) and [socketwatcher](https://github.com/bytzdev/node-socketwatcher).  
-after npm finishes, cd to each build directoy - located in `<this package>/node_modules/<package>/build>`  
+after npm finishes, cd to each build directoy located in `<this package>/node_modules/<package>/build>`  
 and issue `make`.  
 
 for more info check out the [node_pcap issues](https://github.com/node-pcap/node_pcap/issues) page.  
