@@ -13,12 +13,12 @@ const fs       = require('fs'),
 var clients = [] // need to linnk this to sensors..
 
 var data = {
-  devs: {ap: [], sta: [], ssid: []},
+  devs: { ap: [], sta: [], ssid: [] },
   db: {},
   sensors: {},
-  location: {lon: 0, lat: 0},
+  location: { lon: 0, lat: 0 },
   stats: { packets: 0, errors: 0, runtime: 0, cpu: 0,
-           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0
+           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0,
          },
   info: { start_time: new Date(), port: cfg.server.ws.port,
           hostname: os.hostname(), versions: process.versions,
@@ -42,7 +42,7 @@ function updateStats() {
 }
 
 function newDevice(pkt) {
-  const vendor = get_vendor(pkt.mac)
+  const vendor = getVendor(pkt.mac)
   
   pkt.vendor = vendor[0]
   pkt.vendorSm = vendor[1]
@@ -50,13 +50,16 @@ function newDevice(pkt) {
   
   var tmp = { 
       type: null, // ap, sta
+      pktype: pkt.rftype,
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
-      seen: { first: pkt.time, last: pkt.time },
+      lastseen: new Date(),
+      firstseen: new Date(),
       vendor: pkt.vendor, // short, full
       vendorSm: pkt.vendorSm,
       ssid: pkt.ssid,
-      rssi: { last: pkt.rssi, max: 0, min: 0, avg: 0},
+      channel: pkt.channel,
+      rssi: pkt.rssi,
       location: { lon: pkt.lon, lat: pkt.lat },
       hosts: {}, // clients / ssids
       packets: [], // beacons / probes
@@ -65,11 +68,11 @@ function newDevice(pkt) {
   }
 
   
-  if(pkt.type == 0 && pkt.subtype == 8) {
+  if(pkt.rftype[0] == 0 && pkt.rftype[1] == 8) {
     tmp.type = 'ap'
-    console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi.last}`)
+    console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
   } else {
-    //console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi.last}`)
+    //console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
     tmp.type = 'sta'
   }
   
@@ -82,7 +85,7 @@ function newDevice(pkt) {
   return tmp
 }
 
-function get_vendor(mac) {
+function getVendor(mac) {
   const res = oui(mac)
   
   if(res !== null) {
@@ -98,7 +101,7 @@ function get_vendor(mac) {
       console.error(`OUI: ${e}`.error)
     }
   }
-  return ['Unknown', 'Unknwn']
+  return ['Unknown', 'None']
 }
 
 function read_packet(msg) {
@@ -108,41 +111,49 @@ function read_packet(msg) {
     
     data.location = msg.location
     
-    if(data.sensors.hasOwnProperty(sensor))
-      data.sensors[sensor] += 1
-    else
-      data.sensors[sensor] = 1
+    if(data.sensors.hasOwnProperty(sensor)) {
+      data.sensors[sensor].packets += 1
+      data.sensors[sensor].lastseen = new Date()
+    }
+    else {
+      data.sensors[sensor] = { lastseen: new Date(), firstseen: new Date(),
+                               packets: 1 }
+    }
 
-    if(p.type == 0 && [4,8].includes(p.subtype)) {
-        if(p.subtype == 8 && (!data.devs.ap.includes(p.mac)))
+    if(p.rftype[0] == 0 && [4,8].includes(p.rftype[1])) {
+        if(p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
           data.db[p.mac] = newDevice(p) // ap beacon
 
-        if(p.subtype == 4 && (!data.devs.sta.includes(p.mac)))
+        if(p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
           data.db[p.mac] = newDevice(p) // probe request
                                         // add probe response, etc..
 
         data.db[p.mac].location = {lon: p.lon, lat: p.lat}
-        data.db[p.mac].seen.last = p.time
-        data.db[p.mac].rssi.last = p.rssi
+        data.db[p.mac].lastseen = p.time
+        data.db[p.mac].firstseen = p.rssi
         // history? sensors? rssi ring buffer?
     } else if(p.type == 2) { // data packet
       var dst = p.dst
       var src = p.src
       
       if(data.devs.ap.includes(src)) {
-        data.db[src].hosts[dst] = get_vendor(dst)[0]
-        p.mac = dst
-        p.ssid = data.db[src].ssid
+        if(!data.db[src].hosts.hasOwnProperty(dst)) {
+          data.db[src].hosts[dst] = get_vendor(dst)[0]
+          p.mac = dst
+          p.ssid = data.db[src].ssid
+        }
       } else
       if (data.devs.ap.includes(dst)) {
-        data.db[dst].hosts[src] = get_vendor(src)[0]
-        p.mac = src
-        p.ssid = data.db[dst].ssid
+        if(!data.db[dst].hosts.hasOwnProperty(src)) {
+          data.db[dst].hosts[src] = get_vendor(src)[0]
+          p.mac = src
+          p.ssid = data.db[dst].ssid
+        }
       }
     }
   
   data.stats.packets += 1
-  
+
   } catch (e) {
     console.error(`Decode Packet: ${e}`)
     data.stats.errors += 1
@@ -157,44 +168,40 @@ function latest(since) {
 		const dev = data.db[k]
 		const now = new Date() / 1000
 
-		if(dev.seen.hasOwnProperty('last')) {
-			if((now) < (dev.seen.last + (since / 1000))) {
-				out[k] = data.db[k]
-			}
-		}
+    if(now < (dev.lastseen + (since))) {
+      out[k] = data.db[k]
+    }
 	})
-  return {db: out}
+  return { db: out }
 }
 
-function noop() {}
-
-function heartbeat() {
-  this.isAlive = true
-}
-
-const wss = new WS.Server({ port: cfg.server.ws.port });
+const wss = new WS.Server({ port: cfg.server.ws.port});
  
 console.info(`Listening on port ${cfg.server.ws.port}`)
 
 wss.on('connection', function connection(ws, req) {
-  ws.isAlive = true
-  ws.on('pong', heartbeat)
-
   const ip = req.connection.remoteAddress
   const port = req.connection.remotePort
 
   const id = `${ip}_${port}`
 
-  clients[id] = {mode: null, host: ip, port: port,
-                 firstseen: new Date(), lastseen: new Date()}
+  if(!clients.hasOwnProperty(id))
+    clients[id] = { mode: null, host: ip, port: port,
+                    firstseen: new Date(), lastseen: new Date() }
 
   console.info(`Connection from ${id}}`)
   
   ws.on('message', function incoming(message) {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-    //console.info(`Message from ${id}: ${message}`.debug)
+    //console.info(`Message from ${id} / ${message}`)
     
-    const msg = JSON.parse(message)
+    try {
+      var msg = JSON.parse(message)
+    } catch (e) {
+      console.error(`Bad message format from ${id}: ${message}`)
+      return
+    }
+
     clients[id].lastseen = new Date()
     
     if(msg.hasOwnProperty('type')) {
@@ -222,16 +229,17 @@ wss.on('connection', function connection(ws, req) {
         var duration
         
         if(msg.hasOwnProperty('arg'))
-          duration = Number(msg.arg)
+          duration = parseInt(msg.arg)
         else
-          duration = cfg.server.latest_period
+          duration = cfg.server.ws.subscribe_interval / 4
         
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
       } else
       if (msg.cmd == 'status') {
         updateStats()
-        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: data.stats}))
+        ws.send(JSON.stringify({ type: 'status', time: new Date(),
+                                 data: {sensors: data.sensors, stats: data.stats, info: data.info }}))
       } else
       if (msg.cmd == 'dump') {
         updateStats()
@@ -255,10 +263,9 @@ wss.on('connection', function connection(ws, req) {
           if (ws.readyState === WS.OPEN) {
             ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                      location: data.location,
-                                     data: latest(cfg.server.ws.subscribe_interval)}))
+                                     data: latest(cfg.server.ws.subscribe_interval/4)}))
           } else {
-            console.warn(`Connection closed, terminating ${id}`)
-            
+            //console.warn(`Connection closed, terminating ${id}`)
             try {
               ws.terminate()
               
@@ -279,16 +286,7 @@ wss.on('connection', function connection(ws, req) {
         }
       }
     } else {
-      console.error(`Invalid packet: ${msg}`)
+      console.error(`Invalid packet: ${message}`)
     }
   })
 })
-
-const clientCheck = setInterval(function ping() {
-  wss.clients.forEach(function each(ws) {
-    if (ws.isAlive === false) return ws.terminate()
-
-    ws.isAlive = false
-    ws.ping(noop)
-  })
-}, cfg.server.ws.ping_interval)

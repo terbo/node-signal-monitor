@@ -8,7 +8,7 @@ const process = require('process'),
 var channels, timer
 
 function toggle() {
-  cfg.hopper.hop = !cfg.hopper.hop
+  cfg.hopper.enabled = !cfg.hopper.enabled
 }
 
 function rand_channels() {
@@ -36,14 +36,14 @@ function set_channel(c) {
 }
 
 function hop_channels() {
-  if(cfg.hopper.hop == true) {
+  if(cfg.hopper.enabled) {
     channels = rand_channels()
     hopper()
   }
 }
 
 function hop () {
-  if(!cfg.hopper.hop)
+  if(!cfg.hopper.enabled)
     return
 
   if(!channels.length)
@@ -59,7 +59,8 @@ function hopper() {
 }
 
 function start() {
-  console.log('Channel hopper initiated')
+  if(cfg.hopper.enabled)
+    console.log('Channel hopper initiated')
   hop_channels()
 }
 

@@ -3,21 +3,23 @@ var cfg = require('../etc/config')
 const node_gpsd = require('node-gpsd'),
       gpsd_reconnect = true,
       gpsd_events = [ 'tpv', 'sky' ],
-      gpsd = new node_gpsd.Listener(cfg.sensor.gpsd)
+      gpsd = new node_gpsd.Listener(cfg.sensor.gps)
 
-var location = { lon: 0, lat: 0, time: 0, sats: 0 }
+var lon, lat,
+    location = { lon: 0, lat: 0, time: 0, sats: 0,
+                 acc: 0, speed: 0, track: 0, time: null}
 
 gpsd_events.forEach(function(ev) {
   gpsd.on(ev.toUpperCase(), function(data) {
     try {
       if(data.class == 'SKY') {
         if(!location.sats)
-          console.log(`Found ${data.satellites.length} satellites`)
+          console.log(`Tracking ${data.satellites.length} Satellites`)
         location.sats = Number(data.satellites.length)
       }
       if(data.class == 'TPV' && data.mode == 3) {
-        location.lon = data.lon
-        location.lat = data.lat
+        location.lon = lon = data.lon
+        location.lat = lat = data.lat
         location.time = data.time
 
         if(data.hasOwnProperty('speed'))
@@ -55,9 +57,12 @@ gpsd.on('disconnected', function () {
 })
 
 gpsd.connect(function() {
-  console.log(`Connected to GPSD ${cfg.sensor.gpsd.hostname}:${cfg.sensor.gpsd.port}`)
+  console.log(`Connected to GPSD ${cfg.sensor.gps.hostname}:${cfg.sensor.gps.port}`)
   gpsd.watch()
 })
 
+gpsd.on('error', function wtf () {
+  console.error(arguments)
+})
 
-module.exports = { location: location }
+module.exports = { lon: lon, lat: lat, location: location }

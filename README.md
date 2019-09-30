@@ -22,50 +22,74 @@ node-red leaflet map           -- |
 
 Incomplete code, beware.
 
-configure:
-```text
-npm install
-copy etc/config.js.dist to config.js and edit
-install node-red flow and dependent modules
-edit the configuration in the 'default configuration' node
-```
+configure: `npm install`
+
+see below notes on installing node pcap.
+
+copy etc/config.js.dist to config.js and edit  
+install node-red flow and dependent modules  
+edit the configuration in the 'default configuration' node  
+
+pm2 is recommended as a daemon supervisor.  
 
 server:
+
 ```text
-  pm2 install bin/wss.js
-  pm2 start bin/wss.js
+npm install -g pm2
+pm2 start bin/wss.js
 ```
 
-sensor:
+sensor:  
+configure gpsd, pointing it toward the BlueNMEA  
+or Share GPS mobile apps, for instance.  
+
+configure wireless interface, setting it to monitor mode  
+
+
+install pcap:  
+node_pcap requires the LTS version of nodejs - 10.16.3.  
+Using `n` is recommended to manage multiple installed  
+versions of npm.  
+
 ```text
-  configure gpsd, pointing it toward the BlueNMEA or Share GPS mobile apps, for instance.
-  configure wireless interface, setting it to monitor mode
-  run bin/sensor.js
+npm install -g n
+n lts
 ```
 
-after the flow is deployed, the map will be available at your node-red URL with the endpoint /map.
+then, use the git versions of node_pcap and socketwatcher.  
+after npm finishes, cd to the build directoy of each  
+package and issue a `make` command.  
+
+for more info check out the [pcap issues](https://github.com/node-pcap/node_pcap/issues) page.
+
+`pm2 start bin/sensor.js`
+
+after the flow is deployed, the map will be available at your node-red URL with the endpoint */map*.  
 
 
 # node red map
 
 ![wifi map](doc/sigmonmap-flow.png)
 
-Currently this flow is primarily for mapping devices while traveling.
-Node-red is configured to save context data to disk, but right now nothing else is saved.
-
 The flow requires the node red [worldmap](https://www.npmjs.com/package/node-red-contrib-web-worldmap)
-and [configuration](https://www.npmjs.com/package/node-red-contrib-config) nodes.
+and [configuration](https://www.npmjs.com/package/node-red-contrib-config) nodes.  
+
+Currently this flow is primarily for mapping devices while traveling.  
+Node-red is configured to save context data to disk, but right now nothing else is saved.  
+_its just a phase._
+
 
 TODO:
 - [ ] Learn to code
 - [x] Convert node-red code to new format and publish flow
 - [x] Clarify package requirements, still testing
 - [x] Fix 'empty' SSIDs
+- [x] Easier way to launch/maintain daemons (pm2?)
+- [x] Figure out node-pcap build issues
+- [x] Handle disconnections/crashes/poor connections - bad GPS packets still crash though.
 - [ ] Enable listening on multiple interfaces
-- [ ] File logging
-- [ ] Simple console UI
-- [ ] Easier way to launch/maintain daemons (pm2?)
-- [ ] Figure out node-pcap build issues
+- [ ] File logging - pm2 keeps logs, but need to finish custom logger.js
+- [ ] Simple console UI - trying blessed contrib - lacks in interactivity but might work
 - [ ] Add NeDB as buffer to MongoDB
 
 This is a continuation of the fascination begun with [sigmon](http://github.com/terbo/sigmon).

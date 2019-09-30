@@ -6,8 +6,9 @@
     "dependencies": {
         "node-gpsd": "*",
         "oui": "*",
-        "pcap": "*",
-        "socketwatcher": "*",
+        "pcap": "https://github.com/node-pcap/node_pcap.git",
+        "reconnecting-websocket": "^4.2.0",
+        "socketwatcher": "https://github.com/bytzdev/node-socketwatcher.git",
         "ws": "*"
     }
 }

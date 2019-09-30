@@ -17,6 +17,7 @@ const config = {
         },
         
         db: {
+          enabled: false,
           file: 'sigmonjs.db',
           server: '127.0.0.1:27017',
           host: '127.0.0.1',
@@ -32,7 +33,11 @@ const config = {
     },
     
     sensor: {
-        gpsd: {
+        interface: 'mon0', //['wlan0mon','wlan1mon'],
+        reconnect: true,
+        
+        gps: {
+          enabled: true,
           hostname: '127.0.0.1',
           port: 2947,
         },
@@ -43,13 +48,10 @@ const config = {
           port: '8989',
           url: '/ws',
         },
-        
-        interface: 'mon0', //['wlan0mon','wlan1mon'],
-        reconnect: true,
     },
     
     hopper: {
-        hop: true,
+        enabled: true,
         channel: 1, // when not hopping
         channels: 11,
         dwell: 500, // airodump sleeps for 200ms..

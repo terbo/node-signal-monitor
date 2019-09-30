@@ -2,86 +2,91 @@
 
 const version = '0.0.1'
 
-var cfg    = require('../etc/config'),
-    gpsd   = require('../modules/gpsd'),
-    hopper = require('../modules/hopper')
+var cfg     = require('../etc/config'),
+    gps     = require('../modules/gps'),
+    hopper  = require('../modules/hopper')
+    getChan = require('../modules/wifichannel').get
 
-const fs   = require('fs'),
-      os   = require('os'),
-      WS   = require('ws'),
-      pcap = require('pcap')
+const fs    = require('fs'),
+      os    = require('os'),
+      pcap  = require('pcap'),
+      RWS   = require('reconnecting-websocket'),
+      WS    = require('ws')
 
 const hostname = os.hostname()
 
-function packet_cb(pkt) {
-  try {
-    var packet = pcap.decode.packet(pkt),
-            rf = packet.payload.ieee802_11Frame,
-            p  = {}
+let errors = 0
 
-    p.lon = gpsd.location.lon
-    p.lat = gpsd.location.lat
-    p.len = packet.pcap_header.len
-    p.sensor = hostname
-    p.type = rf.type
-    p.subtype = rf.subType
-    p.time = new Date() / 1000
-    p.rssi = packet.payload.signalStrength
-    p.seq = rf.fragSeq
-    
-    p.mac = rf.shost.toString()
+function packet_cb(buf) {
+  try {
+    const packet = pcap.decode.packet(buf),
+            rf = packet.payload.ieee802_11Frame
+    var pkt  = {}
+
+    pkt.sensor  = hostname
+    pkt.len     = packet.pcap_header.len
+    pkt.time    = packet.pcap_header.ts_usec
+    pkt.rftype  = [rf.type, rf.subType]
+    pkt.channel = getChan(packet.payload.frequency)
+    pkt.mac     = rf.shost.toString()
+    pkt.seq     = rf.fragSeq
+    pkt.rssi    = packet.payload.signalStrength
+    pkt.lon     = gps.lon
+    pkt.lat     = gps.lat
     
     if(rf.type == 0 && rf.subType == 8) {
       for(var tag in rf.beacon.tags) {
-        tags = rf.beacon.tags[tag]
+        var tags = rf.beacon.tags[tag]
       
         if(tags.type == 'channel')
-          p.channel = tags.channel 
+          pkt.channel2 = tags.channel 
         
         if(tags.type == 'ssid' && tags.ssid.length)
-          p.ssid = tags.ssid
+          pkt.ssid = tags.ssid
       }
     } else
     if (rf.type == 0 && rf.subType == 4) {
       for(var tag in rf.probe.tags) {
-        tags = rf.probe.tags[tag]
+        var tags = rf.probe.tags[tag]
       
         if(tags.type == 'ssid' && tags.ssid.length)
-          p.ssid = tags.ssid
+          pkt.ssid = tags.ssid
         }
-    } // TODO: Other packet filters
+    } else
+    if (rf.type == 2) {
+      // where is ssid here?
+      if(rf.hasOwnProperty('beacon'))
+        pkt.hasbeacon = true
+      else if(rf.hasOwnProperty('probe'))
+        pkt.hasprobe = true
+      
+      pkt.dst = rf.dhost.toString()
+      pkt.src = rf.shost.toString()
+    }
     
-    if(!p.hasOwnProperty('ssid'))
-      p.ssid = '[hidden]'
+    if(!pkt.hasOwnProperty('ssid'))
+      if(rf.subType != 4)
+        pkt.ssid = '[hidden]'
+      else if(rf.subType == 4)
+        pkt.ssid = '[any]'
      
-    msg = JSON.stringify({type: 'data', interface: cfg.sensor.interface,
-                          sensor: hostname, location: gpsd.location, data: p})
+    const msg = JSON.stringify({type: 'data', interface: cfg.sensor.interface,
+                          sensor: hostname, location: gps.location, data: pkt})
     ws.send(msg)
   } catch (e) {
-    //console.log(e)
+    errors += 1
+    if(errors % 200000 == 0)
+      console.log(`${errors} errors received - ${e}`)
     return
   }
 }
 
-function heartbeat() {
-  clearTimeout(this.pingTimeout);
-  
-  this.pingTimeout = setTimeout(() => {
-    this.terminate();
-  }, cfg.server.ws.ping_interval + 1000);
-}
-
-var ws = new WS(cfg.sensor.ws.server)
+var ws = new WS(cfg.sensor.ws.server, [], { WebSocket: WS } )
+//ws.debug = true
 var sniffer = pcap.createSession(cfg.sensor.interface)
 
 sniffer.on('error', function wtf() {
-  console.log(arguments)
-})
-
-ws.on('open', heartbeat)
-ws.on('ping', heartbeat)
-ws.on('close', function clear() {
-  clearTimeout(this.pingTimeout)
+  console.error('PCAP:' + arguments)
 })
 
 ws.on('open', function open() {
@@ -101,5 +106,5 @@ ws.on('message', function incoming(message) {
 })
 
 ws.on('error', function wtf() {
-  console.error(arguments)
+  console.error('WS Client:')
 })
