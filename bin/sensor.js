@@ -85,18 +85,18 @@ var ws = new WS(cfg.sensor.ws.server, [], { WebSocket: WS } )
 //ws.debug = true
 var sniffer = pcap.createSession(cfg.sensor.interface)
 
-sniffer.on('error', function wtf() {
+sniffer.on('error', () => {
   console.error('PCAP:' + arguments)
 })
 
-ws.on('open', function open() {
+ws.on('open', () => {
   console.log('Connected to websocket ' + cfg.sensor.ws.server)
   hopper.start()
   sniffer.on('packet', packet_cb)
   console.log('Listening on ' + sniffer.device_name)
 })
 
-ws.on('message', function incoming(message) {
+ws.on('message', message => {
   // type: command
   // type: get/set
   // type: status
@@ -105,6 +105,6 @@ ws.on('message', function incoming(message) {
   console.log(`Message from ${id}: ${message}`)
 })
 
-ws.on('error', function wtf() {
+ws.on('error', () => {
   console.error('WS Client:')
 })

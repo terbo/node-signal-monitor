@@ -39,13 +39,13 @@ const frameTypes =
       34: 'Data+CFPoll',
       35: 'Data+CFACK+CFPoll',
       36: 'NullData',
-      40:	'QoSData',
-      41:	'QoSData+CFACK',
-      42:	'QoSData+CFPoll',
-      43:	'QoSData+CFACK+CF Poll	 ',
-      44:	'NullQoSData',
-      46:	'NullQoSData+CFPoll',
-      47:	'NullQoSData+CFACK+CFPol' }
+      40:  'QoSData',
+      41:  'QoSData+CFACK',
+      42:  'QoSData+CFPoll',
+      43:  'QoSData+CFACK+CF Poll   ',
+      44:  'NullQoSData',
+      46:  'NullQoSData+CFPoll',
+      47:  'NullQoSData+CFACK+CFPol' }
                         }
 
 function getChannel(freq) {
@@ -53,5 +53,6 @@ function getChannel(freq) {
 }
 
 module.exports = { frameTypes: frameTypes,
-                 frequencyMap: frequencyMap,
-                 get: getChannel}
+                   frequencyMap: frequencyMap,
+                   get: getChannel
+                 }

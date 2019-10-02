@@ -9,8 +9,8 @@ var lon, lat,
     location = { lon: 0, lat: 0, time: 0, sats: 0,
                  acc: 0, speed: 0, track: 0, time: null}
 
-gpsd_events.forEach(function(ev) {
-  gpsd.on(ev.toUpperCase(), function(data) {
+gpsd_events.forEach(ev => {
+  gpsd.on(ev.toUpperCase(), data => {
     try {
       if(data.class == 'SKY') {
         if(!location.sats)
@@ -38,14 +38,14 @@ gpsd_events.forEach(function(ev) {
   })
 })
 
-gpsd.on('disconnected', function () {
+gpsd.on('disconnected', () => {
   if(gpsd_reconnect !== null)
     return
 
-  gpsd_reconnect = setInterval(function() {
+  gpsd_reconnect = setInterval(() => {
     console.warn('GPSD Disconnected, reconnecting ...')
     
-    gpsd.connect(function() {
+    gpsd.connect(() => {
       if(gpsd_reconnect !== null) {
         clearInterval(gpsd_reconnect)
         gpsd_reconnect = null
@@ -56,12 +56,12 @@ gpsd.on('disconnected', function () {
   }, 3000)
 })
 
-gpsd.connect(function() {
+gpsd.connect(() => {
   console.log(`Connected to GPSD ${cfg.sensor.gps.hostname}:${cfg.sensor.gps.port}`)
   gpsd.watch()
 })
 
-gpsd.on('error', function wtf () {
+gpsd.on('error', () => {
   console.error(arguments)
 })
 

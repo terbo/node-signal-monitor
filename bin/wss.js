@@ -161,17 +161,17 @@ function read_packet(msg) {
 }
 
 function latest(since) {
-	var out = {}
+  var out = {}
   updateStats()
 
-	Object.keys(data.db).forEach(function(k) {
-		const dev = data.db[k]
-		const now = new Date() / 1000
+  Object.keys(data.db).forEach(k => {
+    const dev = data.db[k]
+    const now = new Date() / 1000
 
     if(now < (dev.lastseen + (since))) {
       out[k] = data.db[k]
     }
-	})
+  })
   return { db: out }
 }
 
@@ -179,7 +179,7 @@ const wss = new WS.Server({ port: cfg.server.ws.port});
  
 console.info(`Listening on port ${cfg.server.ws.port}`)
 
-wss.on('connection', function connection(ws, req) {
+wss.on('connection', (ws, req) => {
   const ip = req.connection.remoteAddress
   const port = req.connection.remotePort
 
@@ -191,7 +191,7 @@ wss.on('connection', function connection(ws, req) {
 
   console.info(`Connection from ${id}}`)
   
-  ws.on('message', function incoming(message) {
+  ws.on('message', message => {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
     //console.info(`Message from ${id} / ${message}`)
     
@@ -257,7 +257,7 @@ wss.on('connection', function connection(ws, req) {
         // should client have to request state data then send another request for new data?
         ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
         
-        clients[id].timer = setInterval(function() {
+        clients[id].timer = setInterval(() => {
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
           
           if (ws.readyState === WS.OPEN) {

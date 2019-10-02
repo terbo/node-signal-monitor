@@ -24,15 +24,15 @@ function set_channel(c) {
   child.stderr.on('data', (data) => { output += data })
   child.stdout.on('data', (data) => { output += data })
 
-	child.on('close', checkexit)
-	child.on('exit',  checkexit)
+  child.on('close', checkexit)
+  child.on('exit',  checkexit)
 
   function checkexit(code) {
     if(code != 0) {
       console.error(`Setting channel: (${output})`)
       process.exit()
     }
-	}
+  }
 }
 
 function hop_channels() {
