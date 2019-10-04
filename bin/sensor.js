@@ -55,20 +55,22 @@ function packet_cb(buf) {
     } else
     if (rf.type == 2) {
       // where is ssid here?
-      if(rf.hasOwnProperty('beacon'))
-        pkt.hasbeacon = true
-      else if(rf.hasOwnProperty('probe'))
-        pkt.hasprobe = true
+      //if(rf.hasOwnProperty('beacon'))
+      //  pkt.hasbeacon = true
+      //else if(rf.hasOwnProperty('probe'))
+      //  pkt.hasprobe = true
       
       pkt.dst = rf.dhost.toString()
       pkt.src = rf.shost.toString()
     }
     
-    if(!pkt.hasOwnProperty('ssid'))
+    if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.len <= 1))
       if(rf.subType != 4)
         pkt.ssid = '[hidden]'
       else if(rf.subType == 4)
         pkt.ssid = '[any]'
+      else
+        pkt.ssid = '[hidden]'
      
     const msg = JSON.stringify({type: 'data', interface: cfg.sensor.interface,
                           sensor: hostname, location: gps.location, data: pkt})
@@ -101,8 +103,8 @@ ws.on('message', message => {
   // type: get/set
   // type: status
   // type: log
-  const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-  console.log(`Message from ${id}: ${message}`)
+  //const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+  console.log(`Message ${message}`)
 })
 
 ws.on('error', () => {

@@ -62,20 +62,25 @@ function newDevice(pkt) {
       channel: pkt.channel,
       rssi: pkt.rssi,
       location: { lon: pkt.lon, lat: pkt.lat },
-      hosts: {}, // clients / ssids
+      hosts: [], // clients / ssids
       packets: [], // beacons / probes
       totalPackets: 1,
       totalBytes: pkt.len,
   }
   
-  if(pkt.rftype[0] == 0 && pkt.rftype[1] == 8) {
-    tmp.type = 'ap'
-    console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
-  } else {
-    console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+  if(pkt.rftype[0] == 0) {
+    if(pkt.rftype[1] == 8) {
+      tmp.type = 'ap'
+      console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+    } else if(pkt.rftype[1] == 4) {
+      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+      tmp.type = 'sta'
+    }
+  } else if(pkt.rftype[0] == 2) {
+    console.log(`+ STA '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
     tmp.type = 'sta'
   }
-  
+
   if(!data.devs[tmp.type].includes(tmp.mac))
     data.devs[tmp.type].push(tmp.mac)
   
@@ -120,37 +125,46 @@ function read_packet(msg) {
                                firstseen: new Date(),
                                packets: 1 }
     }
-
-    if(p.rftype[0] == 0 && [4,8].includes(p.rftype[1])) {
-        if(p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
+    
+    if([2,0].includes(p.rftype[0]) && [4,8].includes(p.rftype[1])) {
+        if(p.rftype[0] == 0 && p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
           data.db[p.mac] = newDevice(p) // ap beacon
 
-        if(p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
+        else if(p.rftype[0] == 0 && p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
           data.db[p.mac] = newDevice(p) // probe request
                                         // add probe response, etc..
+        else if(p.rftype[0] == 2) { // data packet
+          var dst = p.dst
+          var src = p.src
+          
+          if(data.devs.ap.includes(src)) {
+            if(!data.db[src].hosts.includes(dst)) {
+              data.db[src].hosts.push(dst)
+              p.mac = dst
+              p.ssid = data.db[src].ssid
+              if(!data.db.hasOwnProperty(dst))
+                data.db[dst] = newDevice(p)
+            }
+          } else
+          if (data.devs.ap.includes(dst)) {
+            if(!data.db[dst].hosts.includes(src)) {
+              data.db[dst].hosts.push(src)
+              p.mac = src
+              p.ssid = data.db[dst].ssid
+              if(!data.db.hasOwnProperty(src))
+                data.db[src] = newDevice(p)
+            }
+          }
+        }
 
-        data.db[p.mac].location = {lon: p.lon, lat: p.lat}
-        data.db[p.mac].lastseen = p.time
-        data.db[p.mac].rssi = p.rssi
+        if(data.db.hasOwnProperty(p.mac)) {
+          data.db[p.mac].location = {lon: p.lon, lat: p.lat}
+          data.db[p.mac].lastseen = p.time
+          data.db[p.mac].rssi = p.rssi
+          data.db[p.mac].totalPackets += 1
+          data.db[p.mac].totalBytes += p.len
+        }
         // history? sensors? rssi ring buffer?
-    } else if(p.type == 2) { // data packet
-      var dst = p.dst
-      var src = p.src
-      
-      if(data.devs.ap.includes(src)) {
-        if(!data.db[src].hosts.hasOwnProperty(dst)) {
-          data.db[src].hosts[dst] = get_vendor(dst)[0]
-          p.mac = dst
-          p.ssid = data.db[src].ssid
-        }
-      } else
-      if (data.devs.ap.includes(dst)) {
-        if(!data.db[dst].hosts.hasOwnProperty(src)) {
-          data.db[dst].hosts[src] = get_vendor(src)[0]
-          p.mac = src
-          p.ssid = data.db[dst].ssid
-        }
-      }
     }
   
   data.stats.packets += 1
@@ -173,7 +187,7 @@ function latest(since) {
       out[k] = data.db[k]
     }
   })
-  return { db: out }
+  return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
 const wss = new WS.Server({ port: cfg.server.ws.port});
