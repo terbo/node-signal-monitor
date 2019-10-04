@@ -4,6 +4,9 @@
     "version": "0.0.1",
     "private": true,
     "dependencies": {
+        "blessed": "^0.1.81",
+        "blessed-contrib": "^4.8.18",
+        "commander": "^3.0.2",
         "node-gpsd": "*",
         "oui": "*",
         "pcap": "https://github.com/node-pcap/node_pcap.git",

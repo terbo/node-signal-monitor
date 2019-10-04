@@ -78,24 +78,18 @@ and [configuration](https://www.npmjs.com/package/node-red-contrib-config) nodes
 
 Currently this flow primarily functions well when mapping devices noticed while traveling.  
 Node-red is configured to save context data to disk, but right now nothing else is saved.  
-_its just a phase._  
+_its just a phase._   
 
 
 
 TODO:
 - [ ] Learn to code
-- [x] Convert node-red code to new format and publish flow
-- [x] Clarify package requirements, still testing
-- [x] Fix 'empty' SSIDs
-- [x] Easier way to launch/maintain daemons (pm2?)
-- [x] Figure out node-pcap build issues
-- [x] Handle disconnections/crashes/poor connections
+- [x] Simple console UI
 - [ ] Enable listening on multiple interfaces
 - [ ] File logging - pm2 keeps logs, but need to finish custom logger.js
-- [ ] Simple console UI - trying blessed contrib - lacks in interactivity but might work
 - [ ] Add NeDB as buffer to MongoDB
-- [ ] Add OUI Update
 - [ ] Handle bad GPS packets
+- [ ] Standalone web server for leaflet map..
 
 This is a continuation of the fascination begun with [sigmon](https://github.com/terbo/sigmon).
 
@@ -108,5 +102,8 @@ This is a continuation of the fascination begun with [sigmon](https://github.com
 [oui](https://github.com/silverwind/oui): Look up MAC addresses for their vendor in the IEEE OUI database  
 [reconnecting-websocket](https://github.com/pladaria/reconnecting-websocket): Reconnecting WebSocket. For Web, React Native, cli (Node.js)  
 [ws](https://github.com/websockets/ws): Simple to use, blazing fast and thoroughly tested WebSocket client and server for Node.js  
+[blessed-contrib](https://github.com/yaronn/blessed-contrib/): Build terminal dashboards using ascii/ansi art and javascript  
+[commander](https://github.com/tj/commander.js/): node.js command-line interfaces made easy  
+
 
 
