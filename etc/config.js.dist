@@ -1,4 +1,6 @@
 const config = {
+    version: '0.0.1',
+    
     server: {
         max_devices: 0,                 /*   *TODO* Maximum number of devices to remember. */
         device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
