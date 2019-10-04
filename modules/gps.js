@@ -19,7 +19,7 @@ gpsd_events.forEach(ev => {
       }
       if(data.class == 'TPV') {
         if(data.mode == 3) {
-          gps.is_connected = true
+          gpsd.is_connected = true
           location.lon = lon = data.lon
           location.lat = lat = data.lat
           location.time = data.time
@@ -32,9 +32,9 @@ gpsd_events.forEach(ev => {
             location.track = data.track
         } else
         if(data.mode == 2)
-          gps.is_connected = true
+          gpsd.is_connected = true
         else {
-          gps.is_connected = false
+          gpsd.is_connected = false
         }
       } else {
         //console.log(data)

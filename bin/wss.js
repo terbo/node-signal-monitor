@@ -53,8 +53,8 @@ function newDevice(pkt) {
       pktype: pkt.rftype,
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
-      lastseen: new Date(),
-      firstseen: new Date(),
+      lastseen: pkt.time,
+      firstseen: pkt.time,
       vendor: pkt.vendor, // short, full
       vendorSm: pkt.vendorSm,
       ssid: pkt.ssid,
@@ -66,13 +66,12 @@ function newDevice(pkt) {
       totalPackets: 1,
       totalBytes: pkt.len,
   }
-
   
   if(pkt.rftype[0] == 0 && pkt.rftype[1] == 8) {
     tmp.type = 'ap'
     console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
   } else {
-    //console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+    console.info(`+ Probe '${tmp.macSm}' for ${tmp.ssid} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
     tmp.type = 'sta'
   }
   
@@ -116,7 +115,8 @@ function read_packet(msg) {
       data.sensors[sensor].lastseen = new Date()
     }
     else {
-      data.sensors[sensor] = { lastseen: new Date(), firstseen: new Date(),
+      data.sensors[sensor] = { lastseen: new Date(),
+                               firstseen: new Date(),
                                packets: 1 }
     }
 
@@ -130,7 +130,7 @@ function read_packet(msg) {
 
         data.db[p.mac].location = {lon: p.lon, lat: p.lat}
         data.db[p.mac].lastseen = p.time
-        data.db[p.mac].firstseen = p.rssi
+        data.db[p.mac].rssi = p.rssi
         // history? sensors? rssi ring buffer?
     } else if(p.type == 2) { // data packet
       var dst = p.dst
@@ -231,7 +231,7 @@ wss.on('connection', (ws, req) => {
         if(msg.hasOwnProperty('arg'))
           duration = parseInt(msg.arg)
         else
-          duration = cfg.server.ws.subscribe_interval / 4
+          duration = cfg.server.ws.subscribe_interval
         
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
@@ -263,7 +263,7 @@ wss.on('connection', (ws, req) => {
           if (ws.readyState === WS.OPEN) {
             ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                      location: data.location,
-                                     data: latest(cfg.server.ws.subscribe_interval/4)}))
+                                     data: latest(cfg.server.ws.subscribe_interval)}))
           } else {
             //console.warn(`Connection closed, terminating ${id}`)
             try {

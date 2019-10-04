@@ -25,14 +25,14 @@ function packet_cb(buf) {
 
     pkt.sensor  = hostname
     pkt.len     = packet.pcap_header.len
-    pkt.time    = packet.pcap_header.ts_usec
+    pkt.time    = packet.pcap_header.tv_sec
     pkt.rftype  = [rf.type, rf.subType]
     pkt.channel = getChan(packet.payload.frequency)
     pkt.mac     = rf.shost.toString()
     pkt.seq     = rf.fragSeq
     pkt.rssi    = packet.payload.signalStrength
-    pkt.lon     = gps.lon
-    pkt.lat     = gps.lat
+    pkt.lon     = gps.location.lon
+    pkt.lat     = gps.location.lat
     
     if(rf.type == 0 && rf.subType == 8) {
       for(var tag in rf.beacon.tags) {
