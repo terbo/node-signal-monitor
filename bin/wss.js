@@ -53,6 +53,7 @@ function newDevice(pkt) {
       pktype: pkt.rftype,
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
+      sensor: pkt.sensor,
       lastseen: pkt.time,
       firstseen: pkt.time,
       vendor: pkt.vendor, // short, full
@@ -247,6 +248,7 @@ wss.on('connection', (ws, req) => {
       } else
       if (msg.cmd == 'subscribe') {
         console.info(`New Subscriber: ${id}`)
+        
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
         if(msg.hasOwnProperty('arg')) {
