@@ -40,7 +40,8 @@ const config = {
         
         gps: {                          /*   If one sensor manages multiple interfaces, how would we  */
           enabled: true,                /*   distinguish their location/orientation, e.g. having two  */
-          hostname: '127.0.0.1',        /*   directional antennas for gleaning better location info?  */
+          auto_connect: true,           /*   directional antennas for gleaning better location info?  */
+          hostname: '127.0.0.1',
           port: 2947,
         },
         
