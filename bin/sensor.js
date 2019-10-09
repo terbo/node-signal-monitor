@@ -1,10 +1,11 @@
 #!/usr/bin/env node
+"use strict"
 
 const version = '0.0.1'
 
 var cfg     = require('../etc/config'),
     gps     = require('../modules/gps'),
-    hopper  = require('../modules/hopper')
+    hopper  = require('../modules/hopper'),
     getChan = require('../modules/wifichannel').get
 
 const fs      = require('fs'),
