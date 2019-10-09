@@ -1,13 +1,16 @@
 var cfg = require('../etc/config')
 
+require('console-stamp')(console, { pattern: 'HH:MM:ss' })
+
 const node_gpsd = require('node-gpsd'),
       gpsd_reconnect = true,
       gpsd_events = [ 'tpv', 'sky' ],
       gpsd = new node_gpsd.Listener(cfg.sensor.gps)
 
+
 var is_connected = false,
     location = { lon: 0, lat: 0, time: 0, sats: 0,
-                 acc: 0, speed: 0, track: 0, time: null}
+                 acc: 0, speed: 0, track: 0, time: null }
 
 gpsd_events.forEach(ev => {
   gpsd.on(ev.toUpperCase(), data => {

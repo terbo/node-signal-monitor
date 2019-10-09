@@ -1,5 +1,7 @@
 var cfg = require('../etc/config')
 
+require('console-stamp')(console, { pattern: 'HH:MM:ss' })
+
 const process = require('process'),
         spawn = require('child_process').spawn,
            ws = require('ws')
