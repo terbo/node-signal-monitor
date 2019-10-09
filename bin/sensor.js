@@ -7,15 +7,22 @@ var cfg     = require('../etc/config'),
     hopper  = require('../modules/hopper')
     getChan = require('../modules/wifichannel').get
 
-const fs    = require('fs'),
-      os    = require('os'),
-      pcap  = require('pcap'),
-      RWS   = require('reconnecting-websocket'),
-      WS    = require('ws')
-
+const fs      = require('fs'),
+      os      = require('os'),
+      pcap    = require('pcap'),
+      RWS     = require('reconnecting-websocket'),
+      WS      = require('ws'),
+      program = require('commander'),
+      process = require('process') 
 const hostname = os.hostname()
 
+require('console-stamp')(console, { pattern: 'HH:MM:ss' });
 let errors = 0
+
+program.option('-i, --iface <iface>','choose interface')
+
+if(program.iface)
+  cfg.sensor.interface = program.iface
 
 function packet_cb(buf) {
   try {
@@ -52,14 +59,7 @@ function packet_cb(buf) {
         if(tags.type == 'ssid' && tags.ssid.length)
           pkt.ssid = tags.ssid
         }
-    } else
-    if (rf.type == 2) {
-      // where is ssid here?
-      //if(rf.hasOwnProperty('beacon'))
-      //  pkt.hasbeacon = true
-      //else if(rf.hasOwnProperty('probe'))
-      //  pkt.hasprobe = true
-      
+    } else if (rf.type == 2) {
       pkt.dst = rf.dhost.toString()
       pkt.src = rf.shost.toString()
     }
@@ -76,9 +76,10 @@ function packet_cb(buf) {
                           sensor: hostname, location: gps.location, data: pkt})
     ws.send(msg)
   } catch (e) {
-    errors += 1
+    /*errors += 1
     if(errors % 200000 == 0)
-      console.log(`${errors} errors received - ${e}`)
+      console.error(`${errors} errors received - ${e}`)
+    */
     return
   }
 }
@@ -92,10 +93,10 @@ sniffer.on('error', () => {
 })
 
 ws.on('open', () => {
-  console.log('Connected to websocket ' + cfg.sensor.ws.server)
+  console.info('Connected to websocket ' + cfg.sensor.ws.server)
   hopper.start()
   sniffer.on('packet', packet_cb)
-  console.log('Listening on ' + sniffer.device_name)
+  console.info('Listening on ' + sniffer.device_name)
 })
 
 ws.on('message', message => {
@@ -104,7 +105,7 @@ ws.on('message', message => {
   // type: status
   // type: log
   //const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-  console.log(`Message ${message}`)
+  console.debug(`Message ${message}`)
 })
 
 ws.on('error', () => {

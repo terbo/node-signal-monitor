@@ -10,6 +10,8 @@ const fs       = require('fs'),
       WS       = require('ws'),
       process  = require('process')
 
+require('console-stamp')(console, { pattern: 'HH:MM:ss' })
+
 var clients = [] // need to linnk this to sensors..
 
 var data = {
@@ -51,6 +53,7 @@ function newDevice(pkt) {
   var tmp = { 
       type: null, // ap, sta
       pktype: pkt.rftype,
+      seq: pkt.seq,
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
       sensor: pkt.sensor,
@@ -76,8 +79,8 @@ function newDevice(pkt) {
       console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
       tmp.type = 'sta'
     }
-  } else if(pkt.rftype[0] == 2) {
-    console.log(`+ STA '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+  } else { // if(pkt.rftype[0] == 2) {
+    console.info(`+ STA '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
     tmp.type = 'sta'
   }
 
@@ -126,46 +129,47 @@ function read_packet(msg) {
                                packets: 1 }
     }
     
-    if([2,0].includes(p.rftype[0]) && [4,8].includes(p.rftype[1])) {
-        if(p.rftype[0] == 0 && p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
-          data.db[p.mac] = newDevice(p) // ap beacon
+    if(p.rftype[0] == 0 && p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
+      data.db[p.mac] = newDevice(p) // ap beacon
 
-        else if(p.rftype[0] == 0 && p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
-          data.db[p.mac] = newDevice(p) // probe request
+    else if(p.rftype[0] == 0 && p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
+      data.db[p.mac] = newDevice(p) // probe request
                                         // add probe response, etc..
-        else if(p.rftype[0] == 2) { // data packet
-          var dst = p.dst
-          var src = p.src
+    else if(p.rftype[0] == 2) { // data packet
+      var dst = p.dst
+      var src = p.src
           
-          if(data.devs.ap.includes(src)) {
-            if(!data.db[src].hosts.includes(dst)) {
-              data.db[src].hosts.push(dst)
-              p.mac = dst
-              p.ssid = data.db[src].ssid
-              if(!data.db.hasOwnProperty(dst))
-                data.db[dst] = newDevice(p)
-            }
-          } else
-          if (data.devs.ap.includes(dst)) {
-            if(!data.db[dst].hosts.includes(src)) {
-              data.db[dst].hosts.push(src)
-              p.mac = src
-              p.ssid = data.db[dst].ssid
-              if(!data.db.hasOwnProperty(src))
-                data.db[src] = newDevice(p)
-            }
+      if(data.devs.ap.includes(src)) {
+        if(!data.db[src].hosts.includes(dst)) {
+          data.db[src].hosts.push(dst)
+          p.mac = dst
+          p.ssid = data.db[src].ssid
+              
+          if(!data.db.hasOwnProperty(dst))
+            data.db[dst] = newDevice(p)
+        }
+      } else
+        if (data.devs.ap.includes(dst)) {
+          if(!data.db[dst].hosts.includes(src)) {
+            data.db[dst].hosts.push(src)
+            p.mac = src
+            p.ssid = data.db[dst].ssid
+              
+            if(!data.db.hasOwnProperty(src))
+              data.db[src] = newDevice(p)
           }
-        }
-
-        if(data.db.hasOwnProperty(p.mac)) {
-          data.db[p.mac].location = {lon: p.lon, lat: p.lat}
-          data.db[p.mac].lastseen = p.time
-          data.db[p.mac].rssi = p.rssi
-          data.db[p.mac].totalPackets += 1
-          data.db[p.mac].totalBytes += p.len
-        }
-        // history? sensors? rssi ring buffer?
+      }
     }
+
+    if(data.db.hasOwnProperty(p.mac)) {
+      data.db[p.mac].location = { lon: p.lon, lat: p.lat }
+      data.db[p.mac].lastseen = p.time
+      data.db[p.mac].rssi = p.rssi
+      data.db[p.mac].totalPackets += 1
+      data.db[p.mac].totalBytes += p.len
+    }
+
+    // history? sensors? rssi ring buffer?
   
   data.stats.packets += 1
 
@@ -290,7 +294,7 @@ wss.on('connection', (ws, req) => {
                 delete clients[id].timer
               }
             } catch(e) {
-              console.log(`Terminating connection: ${e}`)
+              console.info(`Terminating connection: ${e}`)
             }
           }
         }, cfg.server.ws.subscribe_interval)
