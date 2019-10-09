@@ -1,3 +1,5 @@
+"use strict"
+
 var cfg = require('../etc/config')
 
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })

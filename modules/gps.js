@@ -1,3 +1,5 @@
+"use strict"
+
 var cfg = require('../etc/config')
 
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })
@@ -23,8 +25,8 @@ gpsd_events.forEach(ev => {
       if(data.class == 'TPV') {
         if(data.mode == 3) {
           gpsd.is_connected = true
-          location.lon = lon = data.lon
-          location.lat = lat = data.lat
+          location.lon = data.lon
+          location.lat = data.lat
           location.time = data.time
 
           if(data.hasOwnProperty('speed'))
