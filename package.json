@@ -5,18 +5,21 @@
     "private": true,
     "homepage": "https://github.com/terbo/node-signal-monitor",
     "bugs": {
-      "url": "https://github.com/terbo/node-signal-monitor/issues"
+        "url": "https://github.com/terbo/node-signal-monitor/issues"
     },
     "repository": {
-      "type": "git",
-      "url": "git+https://github.com/terbo/node-signal-monitor.git"
+        "type": "git",
+        "url": "git+https://github.com/terbo/node-signal-monitor.git"
     },
     "dependencies": {
+        "@skyraptor/leaflet.markercluster": "^1.4.1",
         "blessed": "^0.1.81",
         "blessed-contrib": "^4.8.18",
         "commander": "^3.0.2",
         "console-stamp": "^0.2.9",
+        "extend": "^3.0.2",
         "human-number": "^1.0.4",
+        "leaflet": "^1.5.1",
         "node-gpsd": "^0.3.0",
         "oui": "^10.0.24",
         "pcap": "git+https://github.com/node-pcap/node_pcap.git",

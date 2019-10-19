@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-
-const version = '0.0.1'
+"use strict"
 
 var cfg  = require('../etc/config.js')
 
@@ -8,13 +7,27 @@ const fs       = require('fs'),
       os       = require('os'),
       oui      = require('oui'),
       WS       = require('ws'),
-      process  = require('process')
+      process  = require('process'),
+      program  = require('commander')
 
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
-var clients = [] // need to linnk this to sensors..
+program.name('sigmon websocket server')
+       .version(cfg.version)
+       .description('http://github.com/terbo/node-signal-monitor#readme')
+
+program.option('-p,--port <port>','port to listen on',cfg.server.ws.port)
+       .option('-l,--host <ip>','ip to bind to',cfg.server.ws.hostname)
+
+program.parse(process.argv)
+
+cfg = cfg.server
+
+cfg.ws.port = program.port
+cfg.ws.hostname = program.hostname
 
 var data = {
+  clients: [],
   devs: { ap: [], sta: [], ssid: [] },
   db: {},
   sensors: {},
@@ -22,9 +35,9 @@ var data = {
   stats: { packets: 0, errors: 0, runtime: 0, cpu: 0,
            memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0,
          },
-  info: { start_time: new Date(), port: cfg.server.ws.port,
+  info: { start_time: new Date(), port: cfg.ws.port,
           hostname: os.hostname(), versions: process.versions,
-          user: os.userInfo(), pid: process.pid, version: version
+          user: os.userInfo(), pid: process.pid, version: program.version()
          },
 }
 
@@ -62,8 +75,9 @@ function newDevice(pkt) {
       vendor: pkt.vendor, // short, full
       vendorSm: pkt.vendorSm,
       ssid: pkt.ssid,
-      channel: pkt.channel,
       rssi: pkt.rssi,
+      channel: pkt.channel,
+      recvchan: pkt.rcvchan,
       location: { lon: pkt.lon, lat: pkt.lat },
       hosts: [], // clients / ssids
       packets: [], // beacons / probes
@@ -71,17 +85,29 @@ function newDevice(pkt) {
       totalBytes: pkt.len,
   }
   
-  if(pkt.rftype[0] == 0) {
+  if(tmp.channel === 0)
+    tmp.channel = tmp.recvchan
+
+  if(pkt.rftype[0] === 0) {
     if(pkt.rftype[1] == 8) {
       tmp.type = 'ap'
-      console.info(`+ AP '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+      console.info(`+ AP '${tmp.ssid}' from ${tmp.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+
+      tmp.enctype = pkt.enctype
+      tmp.cyphertype = pkt.cyphertype
+      tmp.rates = pkt.rates
+      tmp.extrarates = pkt.extrarates
+
     } else if(pkt.rftype[1] == 4) {
-      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${tmp.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
       tmp.type = 'sta'
+      tmp.hosts.push(tmp.ssid)
     }
   } else { // if(pkt.rftype[0] == 2) {
-    console.info(`+ STA '${tmp.macSm}' for '${tmp.ssid}' type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+    console.info(`+ STA '${tmp.macSm}' for '${tmp.ssid}' from ${tmp.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
     tmp.type = 'sta'
+
+    tmp.hosts.push(tmp.ssid)
   }
 
   if(!data.devs[tmp.type].includes(tmp.mac))
@@ -99,11 +125,11 @@ function getVendor(mac) {
   if(res !== null) {
     try {
       var vendor = res.split('\n')[0]
-      var sp = vendor.split(' ')
-      var vendorSm = sp[0].substr(0,7)
+      var parts = vendor.split(' ')
+      var vendorSm = parts[0].substr(0,7)
       
-      if(sp.length > 1)
-          vendorSm += sp[1].substr(0,1).toUpperCase() + sp[1].substr(1,2)
+      if(parts.length > 1)
+        vendorSm += parts[1].substr(0,1).toUpperCase() + parts[1].substr(1,2)
       return [vendor, vendorSm]
     } catch (e) {
       console.error(`OUI: ${e}`.error)
@@ -134,26 +160,28 @@ function read_packet(msg) {
 
     else if(p.rftype[0] == 0 && p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
       data.db[p.mac] = newDevice(p) // probe request
-                                        // add probe response, etc..
+      
     else if(p.rftype[0] == 2) { // data packet
       var dst = p.dst
       var src = p.src
           
       if(data.devs.ap.includes(src)) {
+        p.mac = dst
+        p.ssid = data.db[src].ssid
+        
         if(!data.db[src].hosts.includes(dst)) {
           data.db[src].hosts.push(dst)
-          p.mac = dst
-          p.ssid = data.db[src].ssid
               
           if(!data.db.hasOwnProperty(dst))
             data.db[dst] = newDevice(p)
         }
       } else
         if (data.devs.ap.includes(dst)) {
+          p.mac = src
+          p.ssid = data.db[dst].ssid
+          
           if(!data.db[dst].hosts.includes(src)) {
             data.db[dst].hosts.push(src)
-            p.mac = src
-            p.ssid = data.db[dst].ssid
               
             if(!data.db.hasOwnProperty(src))
               data.db[src] = newDevice(p)
@@ -167,11 +195,15 @@ function read_packet(msg) {
       data.db[p.mac].rssi = p.rssi
       data.db[p.mac].totalPackets += 1
       data.db[p.mac].totalBytes += p.len
+      
+      if(data.db[p.mac].type == 'sta' && (!data.db[p.mac].hosts.includes(p.ssid)))
+        data.db[p.mac].hosts.push(p.ssid)
+  
+      data.stats.packets += 1
     }
 
     // history? sensors? rssi ring buffer?
   
-  data.stats.packets += 1
 
   } catch (e) {
     console.error(`Decode Packet: ${e}`)
@@ -182,21 +214,24 @@ function read_packet(msg) {
 function latest(since) {
   var out = {}
   updateStats()
-
+  
+  const now = new Date() / 1000
+  
   Object.keys(data.db).forEach(k => {
     const dev = data.db[k]
-    const now = new Date() / 1000
 
     if(now < (dev.lastseen + (since))) {
       out[k] = data.db[k]
     }
   })
+  
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
-const wss = new WS.Server({ port: cfg.server.ws.port});
+const wss = new WS.Server({ port: cfg.ws.port});
  
-console.info(`Listening on port ${cfg.server.ws.port}`)
+console.info(`Listening on port ${cfg.ws.port}`)
+
 
 wss.on('connection', (ws, req) => {
   const ip = req.connection.remoteAddress
@@ -204,8 +239,8 @@ wss.on('connection', (ws, req) => {
 
   const id = `${ip}_${port}`
 
-  if(!clients.hasOwnProperty(id))
-    clients[id] = { mode: null, host: ip, port: port,
+  if(!data.clients.hasOwnProperty(id))
+    data.clients[id] = { mode: null, host: ip, port: port,
                     firstseen: new Date(), lastseen: new Date() }
 
   console.info(`Connection from ${id}}`)
@@ -221,20 +256,20 @@ wss.on('connection', (ws, req) => {
       return
     }
 
-    clients[id].lastseen = new Date()
+    data.clients[id].lastseen = new Date()
     
     if(msg.hasOwnProperty('type')) {
       if(msg.type == 'data') {
         read_packet(msg)
       } else
       if(msg.type == 'log') {
-        read_log(msg)
+        //read_log(msg)
       } else
       if (msg.type == 'status') {
-        setStatus(msg)
+        //setStatus(msg)
       } else
       if (msg.type == 'time') {
-        checkTime(msg)
+        //checkTime(msg)
       }
     } else
     if(msg.hasOwnProperty('cmd')) {
@@ -250,7 +285,7 @@ wss.on('connection', (ws, req) => {
         if(msg.hasOwnProperty('arg'))
           duration = parseInt(msg.arg)
         else
-          duration = cfg.server.ws.subscribe_interval
+          duration = cfg.ws.subscribe_interval
         
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
@@ -274,35 +309,38 @@ wss.on('connection', (ws, req) => {
             var interval = msg.arg
         }
         
-        // should client have to request state data then send another request for new data?
-        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
-        
-        clients[id].timer = setInterval(() => {
+        data.clients[id].timer = setInterval(() => { 
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
           
           if (ws.readyState === WS.OPEN) {
             ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                      location: data.location,
-                                     data: latest(cfg.server.ws.subscribe_interval)}))
+                                     data: latest(cfg.ws.subscribe_interval)}))
           } else {
-            //console.warn(`Connection closed, terminating ${id}`)
+            console.debug(`Connection closed, terminating ${id}`)
             try {
               ws.terminate()
               
-              if(clients[id].hasOwnProperty('timer')) {
-                clearInterval(clients[id].timer)
-                delete clients[id].timer
+              if(data.clients[id].hasOwnProperty('timer')) {
+                clearInterval(data.clients[id].timer)
+                delete data.clients[id].timer
               }
             } catch(e) {
-              console.info(`Terminating connection: ${e}`)
-            }
+              console.error(`Terminating connection: ${e}`)
           }
-        }, cfg.server.ws.subscribe_interval)
+        }
+        
+        }, cfg.ws.subscribe_interval * 1000) 
+        
+        ws.send(JSON.stringify({ type: 'latest', time: new Date(),
+                                 location: data.location,
+                                 data: latest(cfg.ws.subscribe_interval)}))
+        
       } else
       if (msg.cmd == 'unsubscribe') {
-        if(clients[id].hasOwnProperty('timer')) {
-          clearInterval(clients[id].timer)
-          delete clients[id].timer
+        if(data.clients[id].hasOwnProperty('timer')) {
+          clearInterval(data.clients[id].timer)
+          delete data.clients[id].timer
         }
       }
     } else {

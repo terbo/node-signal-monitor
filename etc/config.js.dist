@@ -1,5 +1,5 @@
 const config = {
-    version: '0.0.1',
+    version: '0.0.15',
     
     server: {
         max_devices: 0,                 /*   *TODO* Maximum number of devices to remember. */
@@ -23,50 +23,67 @@ const config = {
           enabled: false,
           file: 'sigmonjs.db',
           server: '127.0.0.1:27017',
-          host: '127.0.0.1',
+          hostname: '127.0.0.1',
           port: 27017,
           retain: 604800,
         },
         
         ws: {
           port: 8989,                   
-          subscribe_interval: 4500,     /*   How often do we publish results to subscribers? */
-          ping_interval: 30000,         /*   No longer used */
+          hostname: '0.0.0.0',
+          subscribe_interval: 5,        /*    How often do we publish results to subscribers? (Seconds) */
+          ping_interval: 30000,         /*    No longer used (microseconds) */
         },
     },
     
     sensor: {
-        interface: 'mon0',              /*   *TODO* figure out how to pass the interface upon capture
+        interface: 'monitor0',          /*   *TODO* figure out how to pass the interface upon capture
                                              through the packet callback. Or wait for node-pcapng     */
-        reconnect: true,                /*   Default is to reconnect indefinitally */
+        reconnect: true,                /*   Default is to reconnect indefinitally    */
         
+        use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng.     */
+
+        pcap: {
+          save: false,                  /*   Save packets every X seconds             */
+          filter: '',                   /*   pcap filter to apply to packets
+          interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap */
+          dir: '../data/pcap',
+        },
+
         gps: {                          /*   If one sensor manages multiple interfaces, how would we  */
           enabled: true,                /*   distinguish their location/orientation, e.g. having two  */
           auto_connect: true,           /*   directional antennas for gleaning better location info?  */
           hostname: '127.0.0.1',
           port: 2947,
+          longitude: 0,
+          latittude: 0,
         },
         
         ws: {
-          server: 'ws://127.0.0.1:8989/ws',
-          host: '127.0.0.1',
-          port: '8989',
-          url: '/ws',
+          hostname: 'sonya',
+          port: 8989,
         },
+
+        hopper: {                       /*  spawn/exec based channel hopper for devices with 'iwconfig'     */
+          enabled: true,
+          channel: 1,                   /*  Fixed channel used when not hopping */
+          channels: 11,                 /*  1-11 in the US, 1-13 other places. Other frequencies coming..   */
+          dwell: 500,                   /*  airodump sleeps for 200ms, but here running iwconfig repeatedly */
+                                        /*  some machines get bogged down */
+        },
+
+        ignore: [],
+        alert: []
     },
     
-    hopper: {                           /*  spawn/exec based channel hopper for devices with 'iwconfig'     */
-        enabled: true,
-        channel: 1,                     /*  Fixed channel used when not hopping */
-        channels: 11,                   /*  1-11 in the US, 1-13 other places. Other frequencies coming..   */
-        dwell: 500,                     /*  airodump sleeps for 200ms, but here running iwconfig repeatedly */
-                                        /*  some machines get bogged down */
+    console: {                          /*  Maybe some settings for the blessed/ncurses UI */
+      device_timeout: 160,
     },
 
-    console: {                          /*  Maybe some settings for the blessed/ncurses UI */
-      use_color: true,
-      use_curses: true,
-      status_interval: 60000,
+    oui: {                              /*  Keep the OUI registry updated */
+      update: true,
+      interval: 14,
+      file: '../node_modules/oui/oui.json',  /* Change this to where your oui module is installed to */
     }
 }
 
