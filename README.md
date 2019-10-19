@@ -1,4 +1,4 @@
-# node signal monitor v 0.0.1
+# node signal monitor v 0.0.15
 
 Simple inspection of WiFi networks.
 
@@ -20,7 +20,8 @@ node-red leaflet map           -- |
 
 # usage
 
-Incomplete code, beware.
+Incomplete code, beware. *Note*: Web UI currently broken.
+
 
 configure: `npm install`
 
@@ -85,10 +86,10 @@ _its just a phase._
 TODO:
 - [ ] Learn to code
 - [x] Simple console UI
-- [ ] Enable listening on multiple interfaces
+- [x] Enable listening on multiple interfaces
 - [ ] File logging - pm2 keeps logs, but need to finish custom logger.js
 - [ ] Add NeDB as buffer to MongoDB
-- [ ] Handle bad GPS packets
+- [x] Handle bad GPS packets
 - [ ] Standalone web server for leaflet map..
 
 This is a continuation of the fascination begun with [sigmon](https://github.com/terbo/sigmon).
