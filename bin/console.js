@@ -255,7 +255,8 @@ function update() {
     else
       packetGraph[dev.sensor].y[l] += 1
 
-    channelGraph[dev.channel - 1] += 1
+    if(dev.type == 'ap')
+      channelGraph[dev.channel - 1] += 1
     
     if(filterType == 6 && (now / 1000) > (dev.lastseen + cfg.console.device_timeout))
       return
