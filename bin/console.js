@@ -266,10 +266,9 @@ function update() {
     })
 
     if(dev.type == 'ap')
-      if(dev.channel)
-        channelGraph[dev.channel - 1] += 1
-      else
-        dev.channel = 13
+      channelGraph[dev.channel - 1] += 1
+    else if(!dev.channel)
+      dev.channel = 13
 
     if(filterType == 6 && (now / 1000) > (dev.lastseen + cfg.console.device_timeout))
       return

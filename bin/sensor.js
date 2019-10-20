@@ -64,7 +64,7 @@ function packet_cb(buf) {
     
     // I think this is the channel the receiver was on when the packet was captured
     pkt.rcvchan = getChan(packet.payload.frequency)
-    pkt.channel = pkt.rcvchan
+    pkt.channel = 0
     pkt.mac     = rf.shost.toString().toLowerCase()
     pkt.seq     = rf.fragSeq
     pkt.lon     = gps.location.lon
