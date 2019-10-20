@@ -56,9 +56,9 @@ var devices = {},
     packetGraph = {},
     channelGraph = []
 
-var sortType     = 0,
+var sortType     = 2,
     filterType   = 0,
-    reverse      = false,
+    reverse      = true,
     displayType  = 1,
     displayTypes = ['all','ap','sta'],
     redraw = true,
