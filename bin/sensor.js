@@ -43,6 +43,7 @@ program.parse(process.argv)
 cfg.hopper.enabled = !program.disableHopper 
 cfg.hopper.channel = program.channel
 cfg.hopper.dwell = program.dwell
+cfg.hopper.iface = program.iface
 
 program.location = program.location.split(',')
 cfg.gps.longitude = program.location[0]
