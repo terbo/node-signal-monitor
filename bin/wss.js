@@ -16,12 +16,12 @@ program.name('sigmon websocket server')
        .version(cfg.version)
        .description('http://github.com/terbo/node-signal-monitor#readme')
 
-program.option('-p,--port <port>','port to listen on',cfg.server.ws.port)
-       .option('-l,--host <ip>','ip to bind to',cfg.server.ws.hostname)
+cfg = cfg.server
+
+program.option('-p,--port <port>','port to listen on',cfg.ws.port)
+       .option('-l,--host <ip>','ip to bind to',cfg.ws.hostname)
 
 program.parse(process.argv)
-
-cfg = cfg.server
 
 cfg.ws.port = program.port
 cfg.ws.hostname = program.hostname
