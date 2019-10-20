@@ -1,89 +1,89 @@
 const config = {
-    version: '0.0.15',
+    version: '0.0.16',
     
-    server: {
-        max_devices: 0,                 /*   *TODO* Maximum number of devices to remember. */
-        device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
-        session_length: 260000,         /*   *TODO* How many microseconds after a device is noticed
-                                             do we wait to begin a session? 4 minutes is the default.*/
+    db: {                               /*  Currently syncs database via NeDB, a javascript clone of mongodb */
+      enabled: true,
+      autoload: true,
+      file: '../sigmonjs.db',
+      server: '127.0.0.1:27017',        /* WIP */
+      hostname: '127.0.0.1',
+      port: 27017,
+      retain: 604800,
+      sync_interval: 50000,
+    },
         
-        enable_http: false,             /*   *TODO* Enable web server for UI? */
+    server: {
+        max_devices: 0,                 /*  *WIP* Maximum number of devices to remember.                */
+        device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
+        session_length: 260000,         /*   *TODO* How many microseconds after a device is noticed     */
+                                        /*   do we wait to begin a session? 4 minutes is the default.   */
+        
+        enable_http: false,             /*  *WIP* Enable web server for UI? */
         enable_websocket: true,         /*   Service connection to sensors and web clients/etc. */
 
-        use_ssl: false,                 /*   *TODO* Perhaps we'll use SSL, and authenticate clients, etc. */
+        use_ssl: false,                 /*  *WIP* Perhaps we'll use SSL, and authenticate clients, etc. */
 
-        log: {                          /*   Right now pm2 handles logs, this is for our own logging module */
+        log: {                          /*  *WIP* PM2 handles logs, this is for our own logging module  */
           level: 'info',                
           file: '../wss.log',
           max_size: 10000000,
           max_files: 1,
         },
         
-        db: {                           /*   *TODO* NeDB or MongoDB information */
-          enabled: false,
-          file: 'sigmonjs.db',
-          server: '127.0.0.1:27017',
-          hostname: '127.0.0.1',
-          port: 27017,
-          retain: 604800,
-        },
-        
         ws: {
           port: 8989,                   
-          hostname: '0.0.0.0',
-          subscribe_interval: 5,        /*    How often do we publish results to subscribers? (Seconds) */
-          ping_interval: 30000,         /*    No longer used (microseconds) */
+          hostname: '127.0.0.1',        /* *WIP*
+          subscribe_interval: 5000,     /*  How often do we publish results to subscribers?             */
         },
     },
     
     sensor: {
-        interface: 'monitor0',          /*   *TODO* figure out how to pass the interface upon capture
-                                             through the packet callback. Or wait for node-pcapng     */
-        reconnect: true,                /*   Default is to reconnect indefinitally    */
+        interface: 'wlan1',             /*   Over-ride with -i on command line                          */
+        reconnect: true,                /*   Default is to reconnect indefinitally                      */
         
-        use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng.     */
+        use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng                        */
 
-        pcap: {
-          save: false,                  /*   Save packets every X seconds             */
-          filter: '',                   /*   pcap filter to apply to packets
-          interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap */
+        pcap: {                         /*  *WIP*
+          save: true,                   /*   Save packets every X seconds                               */
+          filter: '',                   /*   pcap filter to apply to packets                            */
+          interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap                   */
           dir: '../data/pcap',
         },
 
-        gps: {                          /*   If one sensor manages multiple interfaces, how would we  */
-          enabled: true,                /*   distinguish their location/orientation, e.g. having two  */
-          auto_connect: true,           /*   directional antennas for gleaning better location info?  */
-          hostname: '127.0.0.1',
+        gps: {                          /*   If one sensor manages multiple interfaces, how would we    */
+          enabled: true,                /*   distinguish their location/orientation, e.g. having two    */
+          auto_connect: true,           /*   directional antennas for gleaning better location info?    */
+          hostname: '127.0.0.1',        /*   if they return their heading name them sensor-orientation  */
           port: 2947,
           longitude: 0,
           latittude: 0,
         },
         
         ws: {
-          hostname: 'sonya',
+          hostname: '127.0.0.1',
           port: 8989,
         },
 
-        hopper: {                       /*  spawn/exec based channel hopper for devices with 'iwconfig'     */
+        hopper: {                       /*  spawn/exec based channel hopper for devices with 'iwconfig' */
           enabled: true,
           channel: 1,                   /*  Fixed channel used when not hopping */
-          channels: 11,                 /*  1-11 in the US, 1-13 other places. Other frequencies coming..   */
-          dwell: 500,                   /*  airodump sleeps for 200ms, but here running iwconfig repeatedly */
-                                        /*  some machines get bogged down */
+          channels: 11,                 /*  1-11 in the US, 1-13 other places. Other freqs coming soon  */
+          dwell: 500,                   /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
+                                        /*  some machines get bogged down                               */
         },
 
-        ignore: [],
-        alert: []
+        ignore: [ ],
+        alert: [ ]
     },
     
-    console: {                          /*  Maybe some settings for the blessed/ncurses UI */
+    console: {                          /*  Maybe some settings for the blessed/ncurses UI              */
       device_timeout: 160,
     },
 
-    oui: {                              /*  Keep the OUI registry updated */
+    oui: {                              /*  Keep the OUI registry updated                               */
       update: true,
       interval: 14,
-      file: '../node_modules/oui/oui.json',  /* Change this to where your oui module is installed to */
+      file: '../node_modules/oui/oui.json',
     }
 }
 
