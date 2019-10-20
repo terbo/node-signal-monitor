@@ -1,7 +1,7 @@
 {
     "name": "node-signal-monitor",
     "description": "Node Signal Monitor",
-    "version": "0.0.1",
+    "version": "0.0.16",
     "private": true,
     "homepage": "https://github.com/terbo/node-signal-monitor",
     "bugs": {
@@ -20,6 +20,8 @@
         "extend": "^3.0.2",
         "human-number": "^1.0.4",
         "leaflet": "^1.5.1",
+        "marked-terminal": "^1.7.0",
+        "nedb": "^1.8.0",
         "node-gpsd": "^0.3.0",
         "oui": "^10.0.24",
         "pcap": "git+https://github.com/node-pcap/node_pcap.git",
@@ -29,6 +31,6 @@
         "ws": "^7.1.2"
     },
     "devDependencies": {
-        "marked": "^0.7.0"
+        "marked": "^0.3.19"
     }
 }

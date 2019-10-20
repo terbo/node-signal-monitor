@@ -59,7 +59,7 @@ var devices = {},
 var sortType     = 0,
     filterType   = 0,
     reverse      = false,
-    displayType  = 0,
+    displayType  = 1,
     displayTypes = ['all','ap','sta'],
     redraw = true,
     drawJSON = false
@@ -80,7 +80,10 @@ var status_log, server_log, packet_graph, channel_bar, device_markdown, status_i
 function devices_page() {
 	devices_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
 	
-	status_markdown = devices_grid.set(dim.st1.h, dim.st1.w, dim.st1.x,dim.st1.y, contrib.markdown)
+	status_markdown = devices_grid.set(dim.st1.h, dim.st1.w, dim.st1.x,dim.st1.y, contrib.markdown, {
+    tags: true
+   , interactive: false
+  })
 
   keys = devices_grid.set(dim.keys.x,dim.keys.y,dim.keys.h,dim.keys.w, contrib.markdown)
   keys.setMarkdown('__Keys__:\n[tab/1/2] change tab [s] sort [r] reverse\n[enter] info [f] filter [z] pause [q] quit')
@@ -89,11 +92,12 @@ function devices_page() {
      { keys: true
      , mouse: true
      , vi: true
+     , tags: true
      , fg: 'white'
      , selectedFg: 'white'
      , selectedBg: 'blue'
-     , interactive: true
      , label: 'Active'
+     , interactive: true
      , width: '60%'
      , height: '50%'
      , border: {type: "none", fg: "cyan"}
@@ -105,14 +109,17 @@ function devices_page() {
     drawInfo(selected[0])
 	})
 
-  info_markdown = devices_grid.set(dim.info.x,dim.info.y, dim.info.h, dim.info.w, contrib.markdown, {
-		label: 'info'
+  info_markdown = devices_grid.set(dim.info.x,dim.info.y, dim.info.h, dim.info.w, contrib.markdown,
+   {
+	   label: 'info'
+   , tags: true
 	}
  )
 
   status_log = devices_grid.set(dim.st2.x,dim.st2.y,dim.st2.h,dim.st2.w, contrib.log,
       { fg: "green"
       , mouse: true
+      , tags: true
       , selectedFg: "green"
       , label: 'log'})
   
@@ -240,24 +247,30 @@ function update() {
     if(mac in cfg.sensor.ignore)
       return
     
-    if(!packetGraph.hasOwnProperty(dev.sensor))
-      packetGraph[dev.sensor] = { title: dev.sensor, style: { line: colors.pop()}, x: [], y: [] }
-    
-    var l = packetGraph[dev.sensor].x.length - 1
+    dev.sensor.forEach(sensor => {
+      if(!packetGraph.hasOwnProperty(sensor))
+      packetGraph[sensor] = { title: sensor, style: { line: colors.pop()}, x: [], y: [] }
 
-    if(packetGraph[dev.sensor].x[l] != nowH)
-      packetGraph[dev.sensor].x.push(nowH)
+    var l = packetGraph[sensor].x.length - 1
+
+    if(packetGraph[sensor].x[l] != nowH)
+      packetGraph[sensor].x.push(nowH)
     
-    var y = packetGraph[dev.sensor].y.length - 1
+    var y = packetGraph[sensor].y.length - 1
     
     if(y < l)
-      packetGraph[dev.sensor].y[l] = 1
+      packetGraph[sensor].y[l] = 1
     else
-      packetGraph[dev.sensor].y[l] += 1
+      packetGraph[sensor].y[l] += 1
+    })
 
     if(dev.type == 'ap')
-      channelGraph[dev.channel - 1] += 1
-    
+      if(dev.channel)
+        channelGraph[dev.channel - 1] += 1
+      else
+        dev.channel = 13
+    dev.rssi = -30
+
     if(filterType == 6 && (now / 1000) > (dev.lastseen + cfg.console.device_timeout))
       return
     
@@ -278,8 +291,7 @@ function update() {
 
       if(dev.rssi > -45)
         dev.tags.push('proximity')
-      
-      if(dev.rssi < -68)
+      else if(dev.rssi < -65)
         dev.tags.push('far')
       
       if(dev.vendor == 'Unknown')
@@ -288,7 +300,8 @@ function update() {
         dev.tags.push('oui')
       
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
-        rows.push([ dev.type.toUpperCase(), dev.sensor, dev.mac, dev.ssid, dev.rssi, dev.channel, dev.vendorSm, lastseen, dev.hosts.length, hmn(dev.totalBytes)])
+        try{rows.push([ dev.type.toUpperCase(), dev.sensor.toString(), dev.mac, dev.ssid, dev.rssi, dev.channel,
+                    dev.vendorSm, lastseen, dev.hosts.length, hmn(dev.totalBytes)])} catch(e) { console.log(e)} //console.table(dev) }
     }
   })
   
@@ -296,12 +309,14 @@ function update() {
     var out = [],
         mem = 0,
         cpu = 0,
-        running = 0
+        dbsize = 0,
+        running = 0,
 
     mem = hmn(status_info[0].memory.rss)
+    dbsize = hmn(status_info[0].dbsize) 
     
     out.push(`Total APs: __${status_info[0].aps}__ STAs: __${status_info[0].stas}__ Packets: __${hmn(status_info[0].packets)}__`)
-    out[0] += `\t  Lon/Lat: __${status_info[3].lon}__, __${status_info[3].lat}__  Sats: __${status_info[3].sats}__\t  Mem: ${mem}`
+    out[0] += ` Lon/Lat: __${status_info[3].lon.toPrecision(7)}__, __${status_info[3].lat.toPrecision(7)}__  Sats: __${status_info[3].sats}__`
 
     running = status_info[0].uptime
     
@@ -309,7 +324,7 @@ function update() {
     now = new Date()
     
     Object.keys(status_info[2]).forEach(sensor => {
-      sensors += `__${sensor}__ (${hmn(status_info[2][sensor].packets)} pkts) `
+      sensors += `__${sensor}__ (${hmn(status_info[2][sensor].packets)}) `
       var last = status_info[2][sensor].lastseen
       var lastseen = (now - new Date(last)) / 1000
       
@@ -317,9 +332,9 @@ function update() {
         sensors += '(DC) '
     })
     
-    out.push(`Sensors ${sensors}`)
+    out.push(`{center} ${sensors} {/}`)
     
-    out.push(`Showing ${displayTypes[displayType].toUpperCase()} Filtering ${filterTypes[filterType]} sorting${reverse ? ' reverse ' : ' '}by ${sortTypes[sortType]}\n${ !redraw ? 'Paused updating.' : ''}`)
+    out.push(`Showing ${displayTypes[displayType].toUpperCase()} Filtering ${filterTypes[filterType]} sorting${reverse ? ' reverse ' : ' '}by ${sortTypes[sortType]} \t\t\t Mem: ${mem} DB: ${dbsize} {/}\n${ !redraw ? 'Paused updating.' : ''}`)
     status_markdown.setMarkdown(out.join('\n'))
   }
   
@@ -420,7 +435,7 @@ ws.addEventListener('open', () => {
 
 ws.addEventListener('message', message => {
   var msg = JSON.parse(message.data)
-  devices = extend(devices, msg.data.db)
+  extend(true, devices, devices, msg.data.db)
   status_info  = [msg.data.stats, msg.data.info, msg.data.sensors, msg.data.location || msg.location]
   
   update()

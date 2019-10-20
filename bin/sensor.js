@@ -64,7 +64,7 @@ function packet_cb(buf) {
     // I think this is the channel the receiver was on when the packet was captured
     pkt.rcvchan = getChan(packet.payload.frequency)
     pkt.channel = 0 
-    pkt.mac     = rf.shost.toString()
+    pkt.mac     = rf.shost.toString().toLowerCase()
     pkt.seq     = rf.fragSeq
     pkt.lon     = gps.location.lon
     pkt.lat     = gps.location.lat
@@ -85,11 +85,11 @@ function packet_cb(buf) {
         if(tag.type == 'extrarates')
           pkt.extrarates = tag.value
         
-        if(tag.type == 'channel')
-          pkt.channel = tag.channel 
+        if(tag.type == 'channel' && parseInt(tag.channel) > 0)
+          pkt.channel = parseInt(tag.channel) 
         
         if(tag.type == 'ssid' && tag.ssid.length)
-          pkt.ssid = tag.ssid
+          pkt.ssid = tag.ssid.toLocaleString()
       }
     } else
     if (rf.type == 0 && rf.subType == 4) {
@@ -169,5 +169,5 @@ ws.addEventListener('message', message => {
 })
 
 ws.addEventListener('error', (e) => {
-  console.error(`WebSocket client: ${e}`)
+  console.error(`WebSocket client: ${e.error}`)
 })
