@@ -32,7 +32,7 @@ const config = {
         
         ws: {
           port: 8989,                   
-          hostname: '127.0.0.1',        /* *WIP*
+          hostname: '127.0.0.1',        /* *WIP*                                                        */
           subscribe_interval: 5000,     /*  How often do we publish results to subscribers?             */
         },
     },
@@ -43,7 +43,7 @@ const config = {
         
         use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng                        */
 
-        pcap: {                         /*  *WIP*
+        pcap: {                         /*  *WIP*                                                       */
           save: true,                   /*   Save packets every X seconds                               */
           filter: '',                   /*   pcap filter to apply to packets                            */
           interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap                   */

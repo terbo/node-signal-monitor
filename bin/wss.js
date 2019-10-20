@@ -103,7 +103,7 @@ function newDevice(pkt) {
   }
   
   if((tmp.channel === 0) || (tmp.channel === undefined))
-    tmp.channel = tmp.recvchan
+    tmp.channel = tmp.recvchan || 0 // ??
 
   if(pkt.rftype[0] === 0) {
     if(pkt.rftype[1] == 8) {

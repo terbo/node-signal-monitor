@@ -43,7 +43,7 @@ const dim = {
   st2:  {h: 1, w: 9, x: 9, y: 0},
   keys: {h: 2, w: 3, x: 0, y: 9},
   info: {h: 9, w: 3, x: 1, y: 9},
-  col1: [4, 8, 18, 32, 4, 2, 10, 12, 8, 12],
+  col1: [4, 10, 18, 32, 4, 2, 10, 12, 8, 12],
 }
 
 var blessed = require('blessed')
@@ -101,7 +101,7 @@ function devices_page() {
      , width: '60%'
      , height: '50%'
      , border: {type: "none", fg: "cyan"}
-     , columnSpacing: 3 //in chars
+     , columnSpacing: 2 //in chars
      , columnWidth: dim.col1 })
 	
 	device_table.rows.on('select',(i,idx) => {
@@ -235,7 +235,8 @@ function update() {
       nowH = now.getMinutes() + ':' + now.getSeconds()
   
   Object.keys(sortkeys(devices,{compare: sortFn[sortType]})).forEach(mac => {
-    var dev = devices[mac]
+    var dev = devices[mac],
+        sensors
 
     dev.tags = []
 
@@ -269,7 +270,6 @@ function update() {
         channelGraph[dev.channel - 1] += 1
       else
         dev.channel = 13
-    dev.rssi = -30
 
     if(filterType == 6 && (now / 1000) > (dev.lastseen + cfg.console.device_timeout))
       return
@@ -298,9 +298,14 @@ function update() {
         dev.tags.push('unknown')
       else
         dev.tags.push('oui')
-      
+     
+      if(dev.sensor.length > 1)
+        sensors = `${dev.sensor[0]},+${(dev.sensor.length) - 1}`
+      else
+        sensors = dev.sensor[0]
+
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
-        try{rows.push([ dev.type.toUpperCase(), dev.sensor.toString(), dev.mac, dev.ssid, dev.rssi, dev.channel,
+        try{rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid, dev.rssi, dev.channel,
                     dev.vendorSm, lastseen, dev.hosts.length, hmn(dev.totalBytes)])} catch(e) { console.log(e)} //console.table(dev) }
     }
   })
