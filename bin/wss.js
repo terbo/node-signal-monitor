@@ -87,8 +87,8 @@ function newDevice(pkt) {
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
       sensor: [pkt.sensor],
-      lastseen: pkt.time,
-      firstseen: pkt.time,
+      lastseen: new Date(pkt.time),
+      firstseen: new Date(pkt.time),
       vendor: pkt.vendor, // short, full
       vendorSm: pkt.vendorSm,
       ssid: pkt.ssid,
@@ -209,7 +209,7 @@ function read_packet(msg) {
 
     if(data.db.hasOwnProperty(p.mac)) {
       data.db[p.mac].location = { lon: p.lon, lat: p.lat }
-      data.db[p.mac].lastseen = p.time
+      data.db[p.mac].lastseen = new Date(p.time)
       data.db[p.mac].rssi = p.rssi
       data.db[p.mac].seq = p.seq
 
@@ -246,14 +246,13 @@ function latest(since) {
   var out = {}
   updateStats()
   
-  const now = new Date() / 1000
+  const now = new Date()
   
   Object.keys(data.db).forEach(k => {
     const dev = data.db[k]
 
-    if(now < ((dev.lastseen *1000) + (since))) {
+    if(now.getTime() - dev.lastseen.getTime() <= since)
       out[k] = data.db[k]
-    }
   })
   
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
@@ -318,6 +317,7 @@ wss.on('connection', (ws, req) => {
         else
           duration = cfg.server.ws.subscribe_interval
         
+        console.log(`sending latest with ${duration}`)
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
       } else
@@ -336,8 +336,11 @@ wss.on('connection', (ws, req) => {
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
         if(msg.hasOwnProperty('arg')) {
+          var duration
           if(msg.arg !== null)
-            var interval = msg.arg
+            duration = parseInt(msg.arg)
+          else
+            duration = cfg.server.ws.subscribe_interval 
         }
         
         data.clients[id].timer = setInterval(() => { 
@@ -346,7 +349,7 @@ wss.on('connection', (ws, req) => {
           if (ws.readyState === WS.OPEN) {
             ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                      location: data.location,
-                                     data: latest(cfg.server.ws.subscribe_interval)}))
+                                     data: latest(duration)}))
           } else {
             console.debug(`Connection closed, terminating ${id}`)
             try {
@@ -365,7 +368,7 @@ wss.on('connection', (ws, req) => {
         
         ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                  location: data.location,
-                                 data: latest(cfg.server.ws.subscribe_interval)}))
+                                 data: latest(interval)}))
         
       } else
       if (msg.cmd == 'unsubscribe') {
