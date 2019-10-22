@@ -317,7 +317,6 @@ wss.on('connection', (ws, req) => {
         else
           duration = cfg.server.ws.subscribe_interval
         
-        console.log(`sending latest with ${duration}`)
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
       } else
@@ -335,13 +334,12 @@ wss.on('connection', (ws, req) => {
         
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
-        if(msg.hasOwnProperty('arg')) {
-          var duration
+        /*if(msg.hasOwnProperty('arg')) {
           if(msg.arg !== null)
             duration = parseInt(msg.arg)
           else
             duration = cfg.server.ws.subscribe_interval 
-        }
+        }*/ 
         
         data.clients[id].timer = setInterval(() => { 
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
@@ -368,7 +366,7 @@ wss.on('connection', (ws, req) => {
         
         ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                  location: data.location,
-                                 data: latest(duration)}))
+                                 data: latest(cfg.server.ws.subscribe_interval)}))
         
       } else
       if (msg.cmd == 'unsubscribe') {

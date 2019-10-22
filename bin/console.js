@@ -27,8 +27,8 @@ const cfg = require('../etc/config.js'),
       wifiChannels = require('../lib/wifichannel')
 
 const extend   = require('extend'),
-      sprintf  = require('util').format,
       sortkeys = require('sort-keys'),
+      sprintf  = require('sprintf-js').sprintf,
        player  = require('node-wav-player'),
            hmn = require('human-number'),
            RWS = require('reconnecting-websocket'),
@@ -176,7 +176,7 @@ function update() {
 
     if(mac in cfg.sensor.alert) { // that wascally wabbit...
       playwav('alert')
-      status1.log(`${mac} seen @ ${new Date()}`)
+      status1.log(`${mac} seen @ ${now}`)
       dev.tags.push('alert')
     } 
     
@@ -206,7 +206,7 @@ function update() {
      } else
        dev.channel = 13
 
-    if(filterType == 6 && (now / 1000) > (dev.lastseen + cfg.console.device_timeout))
+    if(filterType == 6 && now > dev.lastseen + cfg.console.device_timeout)
       return
     
     if(displayTypes[displayType] == 'ap' && dev.type == 'sta')
@@ -218,12 +218,12 @@ function update() {
     dev.ssid = dev.ssid.toLocaleString()
 
     if(carousel.currPage == 0) {
-      var lastseen = new Date(dev.lastseen * 1000).toLocaleTimeString()
+      var lastseen = dev.lastseen
       
-      if((now / 1000) > (dev.firstseen + cfg.console.device_timeout))
+      if(now > (dev.firstseen + cfg.console.device_timeout))
         dev.tags.push('new')
       
-      else if((dev.firstseen - (now / 1000) > 300) && (now / 1000) < (dev.lastseen + 30))
+      else if(((dev.firstseen - now) > 30000) && (now < (dev.lastseen + 3000)))
         dev.tags.push('session')
 
       if(dev.rssi > -45)
@@ -243,7 +243,7 @@ function update() {
 
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
         try {
-          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid, dev.rssi, dev.channel,
+          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, sprintf('%-.24s',dev.ssid), dev.rssi, dev.channel,
                     dev.vendorSm, lastseen, dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
         } catch(e) {
           console.log(e) //console.table(dev)
@@ -290,9 +290,9 @@ function update() {
     Object.keys(status_info[2]).forEach(sensor => {
       sensors += `__${sensor}__ (${hmn(status_info[2][sensor].packets.toPrecision(3))}) `
       var last = status_info[2][sensor].lastseen
-      var lastseen = (now - new Date(last)) / 1000
+      var lastseen = now - last
       
-      if(lastseen > 60)
+      if(lastseen > 60000)
         sensors += '(DC) '
     })
     
@@ -348,6 +348,8 @@ function do_exit(s) {
 
 
 screen.key(['escape', 'q', 'C-c'], do_exit)
+
+screen.key('C-d', () => { ws.send(JSON.stringify({'cmd': 'dump'})) })
 
 screen.key(['s'], (ch, key) => {
   if(carousel.currPage !== 0)
@@ -490,8 +492,8 @@ function drawInfo(mac) {
   
   if(!drawJSON) {
       out =  `${dev.mac} - ${dev.vendor}`
-      out += `\n\nFirst seen: ${new Date(dev.firstseen*1000).toLocaleString()}\n`
-      out += `Last seen: ${new Date(dev.lastseen*1000).toLocaleString()}`
+      out += `\n\nFirst seen: ${dev.firstseen.toLocaleString()}\n`
+      out += `Last seen: ${new Date(dev.lastseen).toLocaleString()}`
       out += `Last RSSI/Seq# ${dev.rssi}/${dev.seq}\n`
       out += `\nTotal Packets/Bytes: ${hmn(dev.totalPackets.toPrecision(3))}/${hmn(dev.totalBytes.toPrecision(3))}\n`
       out += `\n`
@@ -504,7 +506,7 @@ function drawInfo(mac) {
       dev.hosts.forEach(h => {
         if(dev.type == 'ap' && devices.hasOwnProperty(h)) {
           out += `* __${devices[h].mac}__  ${devices[h].vendorSm} (${devices[h].rssi})\n`
-          out += `* . Last Seen: ${new Date(devices[h].lastseen*1000).toLocaleString()}\n`
+          out += `* . Last Seen: ${new Date(devices[h].lastseen).toLocaleString()}\n`
         } else {
           out += `* __${h}__\n`
         }
