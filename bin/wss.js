@@ -368,7 +368,7 @@ wss.on('connection', (ws, req) => {
         
         ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                  location: data.location,
-                                 data: latest(interval)}))
+                                 data: latest(duration)}))
         
       } else
       if (msg.cmd == 'unsubscribe') {
