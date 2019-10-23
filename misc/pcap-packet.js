@@ -1,9 +1,20 @@
+#!/usr/bin/env node
+// this will eventually be used to test the capture setup
+
 'use strict'
 
 const pcap = require('pcap'),
       os = require('os'),
       iface = 'monitor0',
       host = os.hostname()
+
+/* options:
+  save pcap
+  directory
+  interval
+
+  show stats
+*/
 
 var startTime = 0,
 		endTime = 0,
@@ -14,7 +25,7 @@ var startTime = 0,
     timerPt = null,
     savePt  = null,
     stats   = {},
-      //raw   = [],
+    //raw   = [],
     session
 
 let errors = 0
@@ -51,7 +62,7 @@ function decode(packet) {
   }
 }
 
-function save_pcap() {
+function save_pcap(iface) {
   if(!stopped) {
     var pcap_file = `${host}-${iface}-${new Date().getTime()}.pcap`
     session.session.open_live(iface, '', 0, pcap_file, makePacket, true)
@@ -69,19 +80,20 @@ function makePacket() {
 	packet_cb(full_packet);
 }
 
-function start(timer=true, interval=5000, save_packets=true, save_interval=5000) {
+function start(iface, timer=true, interval=5000, save_packets=false, save_interval=5000) {
   console.info('Listening on ' + iface)
   session = pcap.createSession(iface)
   session.on_packet_ready = makePacket
-  
+
   startTime = new Date()
-  
+
   stopped = false
-  
+
   if(timer)
     timerPt = setInterval(show_stats, interval)
-  
+
 	if(save_packets) {
+		save_pcap(iface)
     savePt = setInterval(save_pcap, save_interval)
 	}
 }
@@ -91,10 +103,10 @@ function stop() {
   pcap.on_packet_ready = null
 
   endTime = new Date()
-  console.log('Closed interface ' + iface)
-  
+  console.log('Closed interface.')
+
   clearInterval(timerPt)
   setTimeout(() => {session.close();stopped=true},750)
 }
 
-module.exports = { start, stop, packets, pcap, raw, decode, stats, show_stats , session}
+module.exports = { start, stop, packets, pcap, decode, stats, show_stats , session }
