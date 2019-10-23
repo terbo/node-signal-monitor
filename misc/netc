@@ -1,0 +1,661 @@
+#!/usr/bin/env node
+'use strict';
+
+// does not scan localhost!
+
+// todo: *add ping, mdns, service investigation/banners*
+// *hostname resolution
+// nfs / samba listing?
+// profile like sensors...
+
+// look for anything open or identifiable
+
+// static list like bettercap
+// periodic port scanning, service querying
+// match with log file / network activity / sniff
+// light/medium/heavy port scans
+
+console.olog = console.log
+// to redirect arp-scan output
+console.log=((l) => {
+  return (l) => { logg(l,'debug')};
+})();
+
+
+const   os = require('os'),
+        dns = require('dns'),
+        oui = require('oui'),
+        hmn = require('humanize-number'),
+        host = os.hostname(),
+        pcap = require('pcap'),
+        table = require('table'),
+        process = require('process'),
+        netping = require('net-ping'),
+        program = require('commander'),
+        evilscan = require('evilscan'),
+        sortkeys = require('sort-keys'),
+        arpscan = require('local-network-scanner')
+
+program.name('sigmon.netscan')
+       .version('0.1')
+       .description('Network Scanner: ARP -> Ping/DNS -> Ports/Banners/Versions -> Repeat')
+
+program.option('-o, --output <json,table,curses,grep>','output format','curses')
+       .option('-C, --curses','curses output',true)
+       .option('-J, --json','JSON output',false)
+       .option('-G, --grep','grep-able output',false)
+       .option('-T, --table','table output',false)
+
+program.option('-f, --scanifs <ifaces>','add interface to scan', 'eth0,wlan0')
+       .option('-i, --scanips <ipnum>,...','add IPs to scan','')
+       .option('-n, --scannets <iprange>,...','add network to scan','192.168.1.1,192.168.100.1')
+       .option('-p, --scanports <ports>','add ports to scan', '21,22,23,25,53,80,139,443,8080')
+       .option('-s, --sort <Ip,Ping,pOrt,Vendor>','select sort type','i')
+       .option('-v, --verbose', 'verbose output',false)
+
+program.option('--no-ping','disable ICMP ping',false)
+       .option('--no-dns','disable DNS resolution',false)
+       .option('--no-portscan','disable portscan',false)
+
+program.option('-R, --refresh <seconds>','Curses refresh interval',60)
+       .option('-t, --timeout <seconds>','Timeout to consider a host disconnected',180)
+
+program.option('--finalTimeout <ms>','specify final timeout', 6000)
+       .option('--waitTimeout <ms>','specify timeout waiting for devices', 6000)
+       .option('--scanTimeout <ms>','specify scan device timeout', 5000)
+       .option('--pingTimeout <ms>','specify ping timeout', 5000)
+       .option('--arpTimeout <ms>','specify arp timeout', 600)
+
+program.parse(process.argv)
+
+var outputFormat = program.output,
+    deviceTimeout = program.timeout,
+    finalTimeout = program.finalTimeout,
+    waitTimeout = program.waitTimeout,
+    scanTimeout = program.scanTimeout,
+    pingTimeout = program.pingTimeout,
+    arpTimeout = program.arpTimeout,
+    waitTimer = null
+
+var do_ping  = program.ping,
+    do_dns   = program.dns,
+    do_ports = program.portscan
+
+if(program.curses)
+  outputFormat = 'curses'
+
+else if(program.grep)
+  outputFormat = 'grep'
+
+else if(program.json)
+  outputFormat = 'json'
+
+else if(program.table)
+  outputFormat = 'table'
+
+var refresh = program.refresh,
+    refreshTimer
+
+var scan_ips   = program.scanips.split(','),
+    scan_ifs   = program.scanifs.replace(' ','').split(','),
+    scan_nets  = program.scannets.replace(' ','').split(','),
+    scan_ports = program.scanports,
+    to_scan    = scan_ifs //.concat(scan_ips)
+
+var results = 0,
+    results2 = 0,
+    scanning = 0,
+    don = 0
+
+var devs = {},
+    timer,
+    start,
+    title = 'Devices..'
+
+var packetSniffer = []
+
+const ping = netping.createSession({timeout: pingTimeout})
+
+var sortType = program.sort
+
+const sortTypes = ['Vendor', 'IP', 'Ping', 'Sent', 'Recv', 'Port'],
+      sortFn = [ sortVendor, sortIP, sortPing, sortRecv, sortSent, sortPorts]
+
+function logg(msg,level='info') {
+  const now = new Date()
+  
+  var time = `${now.getHours()}:${now.getMinutes()}.${now.getSeconds()}`,
+      str  = `[${time}] ${msg}`
+
+  if(outputFormat == 'curses' && logBox !== undefined) {
+    if((level == 'debug' && program.verbose) || level == 'info')
+      logBox.log(str)
+  }
+  else {
+  if(level == 'error')
+    console.error(str)
+  else
+  if(level == 'debug' && program.verbose)
+    console.info(str)
+  else
+  if(level == 'info')
+    console.info(str)
+  }
+}
+
+var pingRecord = function() {
+  this.history = []
+  this.limit = 10
+}
+
+pingRecord.prototype.last = function() {
+  if(this.history.length)
+    return this.history[this.history.length-1]
+  else return 0
+}
+
+pingRecord.prototype.add = function(result) {
+  if(this.history.length > this.limit)
+    this.history = this.history.reverse().splice(0,this.limit).reverse()
+  this.history.push(result)
+}
+
+pingRecord.prototype.max = function() { return Math.max.apply(Math, this.history) }
+pingRecord.prototype.min = function() { return Math.min.apply(Math, this.history) }
+pingRecord.prototype.avg = function() {
+  let sum = 0
+  for(var i=0; i < this.history.length; i++)
+    sum += parseInt(this.history[i],10)
+  return sum/this.history.length
+}
+
+function done(devices) {
+  results += (Object.keys(devices).length - 1)
+  const now = new Date()
+
+  devices.forEach(d => {
+    // new device
+    if(!devs.hasOwnProperty(d.ip)) {
+      devs[d.ip] = {
+        ip: d.ip,
+        mac: d.mac,
+        vendor: getVendor(d.mac),
+        hostname: '',
+        aliases: [],
+        skbps: 0,
+        rkbps: 0,
+        kbps: 0,
+        lasts: [0,0],
+        lastr: [0,0],
+        ports: [],
+        banners: {},
+        sent: 0,
+        recv: 0,
+        ping: new pingRecord(),
+        firstseen: now,
+        lastseen: 0,
+        tags: {
+					seen: false,
+					timedout: false,
+          returned: false,
+				},
+      }
+
+      if(do_ports)
+        scanPorts(d.ip, scan_ports)
+    }
+
+    devs[d.ip].lastseen = now
+
+    if(do_ping)
+      icmpPing(d.ip)
+    
+    if((!devs[d.ip].hostname.length) && do_dns)
+      resolveIP(d.ip)
+  })
+  
+  if(don == (to_scan.length - 1) || (results2 == Object.keys(devs).length))
+    setTimeout(finished, finalTimeout)
+  else 
+    logg(`don: ${don++}`,'debug')
+}
+
+function icmpPing(ip) {
+  ping.pingHost(ip, (error, target, sent, recv) => {
+    if(!error) {
+      devs[target].ping.add(recv - sent)
+      logg(`ping ${target}: ${devs[target].ping.last()}ms`, 'debug')
+    }
+    //else logg(error,'debug')
+  })
+}
+
+function resolveIP(ip) {
+  dns.reverse(ip, (error, host) => {
+    if(!error) {
+      var names = (host && host.length) ? host : ['']
+      
+      devs[ip].hostname = names[0].split('.')[0] || names[0]
+      
+      if(names.length > 1)
+        devs[ip].aliases = names.slice(1)
+      
+      logg(`dns ${ip}: ${devs[ip].hostname}`, 'debug')
+    }
+    //else logg(error,'debug')
+  })
+}
+
+function finished() {
+  results = 0
+  results2 = 0
+  don = 0
+  scanning = 0
+  waitTimer = null
+  if(!refreshTimer)
+    refreshTimer = setInterval(printTable, 3000)
+  
+  print_results()
+}
+
+function getVendor(mac) {
+  var res = oui(mac)
+  
+  if(res)
+    res = res.split('\n')[0]
+  else
+    res = 'Unknown'
+  
+  return res
+}
+
+function scanPorts(target, ports) {
+  var opts = {
+      target: target,
+      port: ports,
+      status: 'O',
+      timeout: scanTimeout,
+      banner: true,
+  }
+  
+  var port_scanner = new evilscan(opts)
+  
+  port_scanner.on('result', d => {
+    try {
+        devs[d.ip].ports.push(d.port)
+        devs[d.ip].banners[d.port] = d.banner
+        logg(`${d.ip}/${d.port}: ${d.status} ${d.banner.substr(0,18)}`, 'debug')
+      } catch (e) {
+        logg(e,'error')
+      }
+  })
+
+  port_scanner.on('done', data => {
+    results2 += 1
+  })
+    
+  port_scanner.run()
+}
+
+function startScan() {
+  if(scanning)
+    return
+  
+  scanning = 1
+  start = new Date()
+  
+  for(var i=0; i<to_scan.length; i++) {
+    var target = to_scan[i]
+
+    logg(`Scanning ${target}`,'debug')
+    
+    if(scan_ifs.includes(target))
+      arpscan.scan({arguments: ['-I', target, '-R','-l', '-g','-t', arpTimeout.toString()]},
+                    devices => { done(devices) })
+    else {
+      // need to get the mac address of the IP
+      // and find out how to scan the local machine..
+    }
+  }
+
+  waitforit()
+}
+
+function sortPing(a,b) {
+  if(devs[a].ping.last() > devs[b].ping.last())
+    return 1 
+  if(devs[a].ping.last() < devs[b].ping.last())
+    return -1
+  return 0 
+}
+
+function sortVendor(a,b) {
+  if(devs[a].vendor.toUpperCase() > devs[b].vendor.toUpperCase())
+    return 1 
+  if(devs[a].vendor.toUpperCase() < devs[b].vendor.toUpperCase())
+    return -1
+  return 0 
+}
+
+function sortIP(a,b) {
+  const x=devs[a].ip
+  const num1 = Number(x.split('.').map((num) => (`000${num}`).slice(-3) ).join(''))
+  const y=devs[b].ip
+  const num2 = Number(y.split('.').map((num) => (`000${num}`).slice(-3) ).join(''))
+  
+  if(num1 > num2)
+    return 1
+  if(num1 < num2)
+    return -1
+  return 0
+}
+
+function sortSent(a,b) {
+  return devs[b].sent - devs[a].sent
+}
+
+function sortRecv(a,b) {
+  return devs[b].recv - devs[a].recv
+}
+
+function sortPorts(a,b) {
+  if(devs[a].ports.length > devs[b].ports.length)
+    return 1 
+  if(devs[a].ports.length < devs[b].ports.length)
+    return -1
+  return 0 
+}
+
+function printTable() {
+  const now = new Date()
+  var headers = [['MAC', 'IP', 'Hostname', 'Vendor' ,'KBps', 'Sent', 'Recv', 'Ping', 'Open Ports']],
+  data = []
+
+  Object.keys(sortkeys(devs,{ compare: sortFn[sortType]})).forEach(d => {
+    
+    var open_ports = '',
+        ping_ms, hostname, vendor, sent, recv, host, ip,
+        since = now - devs[d].lastseen
+
+    if(!devs[d].tags.seen) {
+      logg(`New host: ${devs[d].mac} (${devs[d].ip}) ${devs[d].vendor}`)
+      devs[d].tags.seen = now
+    } else
+    if(since > (deviceTimeout * 1000) && (!devs[d].tags.timedout)) {
+      logg(`Host timeout: {bold}${devs[d].mac} (${devs[d].ip}){/} ${devs[d].vendor}`)
+			devs[d].tags.timedout = true
+		} else  
+    if(devs[d].tags.timedout && (since < (deviceTimeout * 1000))) {
+      //var gonesince = now - devs[d].tags.timedout
+      host = `{bold}${devs[d].hostname}{/}`
+      logg(`Host returned: {bold}${devs[d].mac} (${devs[d].ip}){/} ${devs[d].vendor}`)
+      devs[d].tags.timedout = false
+      devs[d].tags.returned = now
+		}
+    
+    /* else
+    if(devs[d].tags.timedout) {
+      logg(since)
+      logg(deviceTimeout * 1000)
+      logg(now)
+    }*/
+
+			// want to trigger a new portscan in this case ..
+      // maybe just auto portscan every ... 15-20 minutes?
+
+    
+    devs[d].ports.sort((a,b) => { return a - b }).forEach(port => {
+      var banner = devs[d].banners[port] || ''
+
+      if((outputFormat == 'curses') || (banner.length == 0))
+        open_ports += `${port},`
+      else
+        open_ports += `${port}: ${banner.substr(0,20)}\n`
+    })
+   
+    open_ports = open_ports.substr(0,open_ports.length - 1)
+  
+    if(devs[d].tags.seen > (now - 8000)) {
+      hostname = `{bold}${devs[d].hostname}{/} `
+      //ip = `{green-fg}${devs[d].ip}{/} `
+    } else
+    
+    if(devs[d].tags.timedout == true) {
+      host = `{bold}${devs[d].mac}{/} `
+      //ip = `{grey-fg}${devs[d].ip}{/} `
+    } else
+    
+    if(devs[d].tags.returned !== false && (devs[d].tags.timedout > (now - 8000))) {
+      host = `{bold}${devs[d].hostname}{/} `
+      //ip = `{blue-fg}${devs[d].ip}{/} `
+    }
+
+    ping_ms = devs[d].ping.last() + 'ms'
+    hostname = devs[d].hostname.length ? devs[d].hostname.substr(0,16) : ''
+		vendor = devs[d].vendor.split(' ')[0]
+
+    sent = hmn(devs[d].sent)
+    recv = hmn(devs[d].recv)
+
+    if(!host)
+      host = devs[d].hostname
+    
+    data.push([devs[d].mac, devs[d].ip, hostname, vendor, devs[d].kbps, sent, recv, ping_ms, open_ports])
+
+  })
+
+  if(outputFormat == 'table') {
+    console.info(table.table(headers.concat(data), {
+      border: table.getBorderCharacters('ramac')
+    }))
+  }
+
+  else // redundant..
+  if(outputFormat == 'curses')
+    try {
+      devTable.setData({ headers: headers[0], data: data})
+      screen.render()
+    } catch (e) {
+      logg(`Drawing table: ${e.error}`)
+    }
+}
+
+function print_results() {
+  const end = new Date()
+  var totalDevs = Object.keys(devs).length,
+       duration = (end - start) / 1000
+
+  if(outputFormat == 'curses')
+    devTable.setLabel(`{center}{bold}${totalDevs}{/} devices on {bold}${to_scan}{/} in ${duration} seconds`)
+  
+  if(['table','curses'].includes(outputFormat))
+    printTable()
+
+  else if (outputFormat == 'json')
+    logg(JSON.stringify(devs)) //, null, 4))
+
+  if(refresh && outputFormat == 'curses')
+    timer = setTimeout(startScan, refresh * 1000)
+  else
+    do_exit()
+}
+
+function waitforit() {
+  logg(`waiting... scanning: ${scanning} res1:${results} res2:${results2} tot:${Object.keys(devs).length}`,'debug')
+  if(!scanning && (results2 > 1) && (results2 >= (Object.keys(devs).length))) {
+    print_results()
+  } else {
+    if(waitTimer)
+      setTimeout(() => {
+      return waitforit()
+      }, waitTimeout)
+  }
+}
+
+function do_exit() {
+  if(screen !== undefined) {
+    screen.destroy()
+    screen.program.clear()
+    screen.program.disableMouse()
+    screen.program.showCursor()
+    screen.program.normalBuffer()
+  }
+  process.exit(2)
+}
+
+
+if(outputFormat == 'curses') {
+  logg('Ahh. I see you are a woman of culture, also..')
+
+  const dim = {
+    scr:  { r: 12, c: 14 },
+    tb1:  { h: 0, w: 0, x: 9, y: 14 },
+    st1:  { h: 3, w: 14, x: 9, y: 0 },
+    col1: [ 18, 16, 16, 9, 12, 10, 10, 8, 30 ]
+  }
+
+  var blessed = require('blessed')
+     , contrib = require('blessed-contrib')
+     , screen = blessed.screen({ smartCSR: true,
+                                 ignoreLocked: true,
+                                 debug: true,
+                                 dockBorders: true,
+                                 autoPadding: true })
+     , grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
+
+  var devTable = grid.set(dim.tb1.h, dim.tb1.w, dim.tb1.x,dim.tb1.y, contrib.table,
+     { keys: true
+     , mouse: true
+     , draggable: false
+     , vi: true
+     , tags: true
+     , fg: 'white'
+     , selectedFg: 'white'
+     , selectedBg: 'blue'
+     , interactive: true
+     , label: title
+     , width: '98%'
+     , height: '75%'
+     , columnSpacing: 4 //in chars
+     , columnWidth: dim.col1 })
+
+  var logBox = grid.set(dim.st1.x,dim.st1.y,dim.st1.h,dim.st1.w, contrib.log,
+      { fg: 'yellow'
+		  , keys: true
+      , mouse: true
+      , vi: true
+      , tags: true
+      , interactive: true
+      , draggable: false
+      , selectedFg: 'green'
+      , label: 'log',
+        scrollbar: {
+          ch: ' ',
+          track: {
+            bg: 'cyan'
+          },
+          style: {
+            inverse: true
+          }
+      }
+  })
+
+  devTable.rows.on('select',(i,idx) => {
+    try {
+      var selected = i.content.match(/(([0-9\.]){1,3}){4}/)
+      //var selected = i.content.match(/[0-9a-f]{1,2}([\.:-])(?:[0-9a-f]{1,2}\1){4}[0-9a-f]{1,2}/)
+      console.info(JSON.stringify(devs[selected[0]],null,1))
+    } catch (e) {logg(e)}
+  })
+
+
+  screen.on('resize', () => {
+    table.width = screen.width * .98
+    table.height = screen.height * .75
+    screen.render()
+  })
+  
+  screen.key(['s'], (ch, key) => { 
+    sortType = (sortType < sortTypes.length - 1) ? sortType + 1 : 0
+
+    logg(`Sorting by ${sortTypes[sortType]}`)
+    printTable()
+  })
+
+  screen.key('h', () => { logg('need help?') })
+  screen.key('v', () => { program.verbose = !program.verbose })
+  screen.key('C-p', () => { scanPorts(scan_ports) })
+  screen.key('C-r', () => { logg('Invoking re-scan'); startScan() })
+  // screen.key(['tab'], (ch, key) => { screen.focusNext(); screen.render() })
+  screen.key('space', () => { refresh = refresh ? 0 : program.refresh })
+  //screen.key('enter', () => { logg(devTable.selected) })
+  screen.key(['escape', 'q', 'C-c'], (ch, key) => { do_exit() })
+
+  devTable.focus()
+  
+  screen.title = `${program.name()} ${program.version()}`
+  screen.render()
+}
+
+//logg(`Sorting on ${sortTypes[sortType]} (${sortType})`)
+//logg(`[timeout] Final: ${finalTimeout}, wait: ${waitTimeout}, scan: ${scanTimeout}, ping: ${pingTimeout}, arp: ${arpTimeout}`)
+//logg(`${outputFormat} output`)
+
+logg(`${program.name()} ${program.version()} scanning ${to_scan} ports ${scan_ports}`)
+
+function packet_cb(packet, iface) {
+  try {
+    const pkt = pcap.decode(packet)
+   
+    const len = pkt.pcap_header.len
+    
+    const src = pkt.payload.payload.saddr
+    const dst = pkt.payload.payload.daddr
+    
+    const now = new Date()
+
+    if(devs.hasOwnProperty(src)) {
+      devs[src].skbs = (now - devs[src].lasts[0]) / (devs[src].lasts[1] + len)
+      devs[src].kbs = devs[src].skbps + devs[src].rkbps
+      devs[src].packets += 1
+      devs[src].sent += len
+      devs[src].lasts = [now, len]
+    } else
+      
+    if(devs.hasOwnProperty(dst)) {
+      devs[dst].rkbs = (now - devs[dst].lastr[0]) / (devs[dst].lastr[1] + len)
+      devs[dst].kbs = devs[dst].skbps + devs[dst].rkbps
+      devs[dst].packets += 1
+      devs[dst].recv += len
+      devs[dst].lastr = [now, len]
+    }
+  }
+  catch(e) { console.log(e) }
+}
+
+scan_ifs.forEach(iface => {
+  //console.log(`Opening sniffer on ${iface}`)
+  logg(`Opening sniffer on ${iface}`)
+  const fbFunc = `packet_cb(packet, "${iface}")`
+  
+  function cb (packet) {
+    eval(fbFunc)
+  }
+
+  packetSniffer[iface] = pcap.createSession(iface)
+  packetSniffer[iface].on('packet', cb)
+})
+
+
+function stopSniffer() {
+  show_stats()
+  pcap.on_packet_ready = null
+
+  endTime = new Date()
+  console.log('Closed interface ' + iface)
+  
+  clearInterval(timerPt)
+  setTimeout(() => {session.close();stopped=true},750)
+}
+
+startScan()
