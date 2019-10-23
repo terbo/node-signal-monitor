@@ -58,7 +58,7 @@ function packet_cb(buf) {
     pkt.sensor  = hostname
     pkt.iface   = program.iface
     pkt.len     = packet.pcap_header.len
-    pkt.time    = packet.pcap_header.tv_sec
+    pkt.time    = new Date(packet.pcap_header.tv_sec * 1000)
     pkt.rssi    = packet.payload.signalStrength
     pkt.rftype  = [rf.type, rf.subType]
     
