@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+
+const cfg     = require('../etc/config'),
+      WS      = require('ws'),
+      process = require('process'),
+      prog    = require('commander')
+
+const commands = 'dump latest subscribe status'.split(' ')
+
+var args,
+		one_shot  = true,
+    output_raw = false
+
+prog.version(cfg.version)
+    .description('send single commands to sigmon server')
+    .option('-s, --server [host]', 'server to query', cfg.sensor.ws.hostname)
+    .option('-p, --port [port]', 'port number', cfg.sensor.ws.port)
+    .option('-r, --raw', 'output raw json', output_raw)
+    .option('-z, --one-shot', 'wait for response then exit', one_shot)
+    .usage('[sigmon opts] command [args..]' +
+           '\ncommands: ' + commands.join(', '))
+
+prog.on('--help', function(){
+  console.log('')
+  console.log('Examples:');
+  console.log('  $ smcmd latest 60000 - return the last minute of captured data');
+  console.log('  $ smcmd dump - return the *entire* device database')
+  console.log('  $ smcmd status')
+  console.log('  $ smcmd subscribe 10000 [log/latest/etc] - implies one_shot=false')
+})
+
+prog.parse(process.argv)
+
+ws      = new WS('ws://' + `${cfg.sensor.ws.hostname}:${cfg.sensor.ws.port}/ws`)
+
+if(prog.args.length >= 1)
+  cmd = prog.args[0]
+else
+  prog.help()
+
+if(prog.args.length >= 2)
+	args = prog.args[1]
+
+if (commands.includes(cmd)) {
+	if(cmd == 'subscribe')
+    prog.oneShot = false
+  
+  ws.on('open', () => {
+		ws.send(JSON.stringify({cmd: cmd, args: args}))
+	})
+
+	ws.on('message', (message) => {
+		if(prog.raw)
+			console.info(message)
+		else
+			console.info(JSON.stringify(JSON.parse(message),null,4))
+		
+		if(prog.oneShot) {
+			ws.close()
+			process.exit(0)
+		}
+	})
+} else
+	prog.help(() => { const out = `\nInvalid command: ${cmd}\n\n` +
+														  `Valid commands: ${commands.join(' ')}\n`;
+										return out  })
+
