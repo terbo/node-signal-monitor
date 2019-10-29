@@ -45,7 +45,7 @@ require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 var blessed = require('blessed'),
      contrib = require('blessed-contrib'),
      screen = blessed.screen({ debug: true,
-															 smartCSR: true,
+                               smartCSR: true,
                                dockBorders: true,
                                ignoreDockContrast: true,
                                autoPadding: true
@@ -100,9 +100,9 @@ function sortClients(a,b) {
 
 function sortFirst(a,b) {
   if(reverse)
-    return devices[b].firstseen - devices[a].firstseen
+    return new Date(devices[b].firstseen).getTime() - new Date(devices[a].firstseen).getTime()
   else
-    return devices[a].firstseen - devices[b].firstseen
+    return new Date(devices[a].firstseen).getTime() - new Date(devices[b].firstseen).getTime()
 }
 
 function sortBytes(a,b) {
@@ -114,9 +114,9 @@ function sortBytes(a,b) {
 
 function sortLast(a,b) {
   if(reverse)
-    return devices[b].lastseen - devices[a].lastseen
+    return new Date(devices[b].lastseen).getTime() - new Date(devices[a].lastseen).getTime()
   else
-    return devices[a].lastseen - devices[b].lastseen
+    return new Date(devices[a].lastseen).getTime() - new Date(devices[b].lastseen).getTime()
 }
 
 function sortSSID(a,b) {
@@ -169,7 +169,7 @@ function playwav(wav) {
 }
 
 function update() {
-  const headers = ['Type', 'Sensor', 'MAC', 'SSID', 'RSSI', 'Ch', 'Vendor','Last Seen','STAs','Bytes']
+  const headers = ['Type', 'Sensors', 'MAC', 'SSID', 'RSSI', 'Ch', 'Vendor','Last Seen','STAs','Bytes']
   
   var rows = [],
       now = new Date(),
@@ -190,7 +190,7 @@ function update() {
     if(mac in cfg.sensor.ignore)
       return
     
-    dev.sensor.forEach(sensor => {
+    dev.sensors.forEach(sensor => {
       if(!packetGraph.hasOwnProperty(sensor))
       packetGraph[sensor] = { title: sensor, style: { line: colors.pop()}, x: [], y: [] }
 
@@ -225,12 +225,13 @@ function update() {
     dev.ssid = dev.ssid.toLocaleString()
 
     if(carousel.currPage == 0) {
-      var lastseen = dev.lastseen
+      var lastseen = new Date(dev.lastseen)
+      var firstseen = new Date(dev.firstseen)
       
-      if(now > (dev.firstseen + cfg.console.device_timeout))
+      if(now > (firstseen + cfg.console.device_timeout))
         dev.tags.push('new')
       
-      else if(((dev.firstseen - now) > 30000) && (now < (dev.lastseen + 3000)))
+      else if(((firstseen - now) > 30000) && (now < (lastseen + 3000)))
         dev.tags.push('session')
 
       if(dev.rssi > -45)
@@ -243,15 +244,15 @@ function update() {
       else
         dev.tags.push('oui')
      
-      if(dev.sensor.length > 1)
-        sensors = `${dev.sensor[0]},+${(dev.sensor.length) - 1}`
+      if(dev.sensors.length > 1)
+        sensors = `${dev.sensors[0]},+${(dev.sensors.length) - 1}`
       else
-        sensors = dev.sensor[0]
+        sensors = dev.sensors[0]
 
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
         try {
           rows.push([ dev.type.toUpperCase(), sensors, dev.mac, sprintf('%-.24s',dev.ssid), dev.rssi, dev.channel,
-                    dev.vendorSm, lastseen, dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
+                    dev.vendorSm, lastseen.toTimeString().split(' ')[0], dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
         } catch(e) {
           console.log(e) //console.table(dev)
         }
@@ -427,15 +428,15 @@ screen.key('h', () => {
 screen.key('/', () => {
   searchBox.show()
   searchBox.focus()
-	searchBox.input('Search:', '', function(err, data) {
-		if (process.argv[2] === 'resume') {
-			process.stdin.resume();
-		} else if (process.argv[2] === 'end') {
-			process.stdin.setRawMode(false);
-			process.stdin.end();
-		}
-		if (err) throw err;
-		searchBox.hide()
+  searchBox.input('Search:', '', function(err, data) {
+    if (process.argv[2] === 'resume') {
+      process.stdin.resume();
+    } else if (process.argv[2] === 'end') {
+      process.stdin.setRawMode(false);
+      process.stdin.end();
+    }
+    if (err) throw err;
+    searchBox.hide()
     //status1.log(`Got: '${data}'`)
     Object.keys(device_table.rows.children).forEach(i => {
       var row = device_table.rows.children[i]
@@ -444,7 +445,7 @@ screen.key('/', () => {
         status1.log(row.content)
       }
     })
-	})
+  })
   screen.render()
 })
 
@@ -483,9 +484,13 @@ ws.addEventListener('open', () => {
 
 ws.addEventListener('message', message => {
   var msg = JSON.parse(message.data)
-  extend(true, devices, devices, msg.data.db)
+  status1.log(`Devices: ${Object.keys(devices).length}`)
+  status1.log(`msg.data.db ${Object.keys(msg.data.db).length} ${Object.keys(msg.data)}`)
+  extend(true, devices, msg.data.db)
+  status1.log(`Devices After: ${Object.keys(devices).length}`)
   status_info  = [msg.data.stats, msg.data.info, msg.data.sensors, msg.data.location || msg.location]
-  
+ 
+
   update()
 })
 
