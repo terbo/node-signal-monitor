@@ -17,6 +17,7 @@
         "blessed-contrib": "^4.8.18",
         "commander": "^3.0.2",
         "console-stamp": "^0.2.9",
+        "duration-format-let": "^1.0.4",
         "extend": "^3.0.2",
         "human-number": "^1.0.4",
         "leaflet": "^1.5.1",
@@ -29,6 +30,7 @@
         "reconnecting-websocket": "^4.2.0",
         "socketwatcher": "git+https://github.com/bytzdev/node-socketwatcher.git",
         "sort-keys": "4.0.0",
+        "sprintf-js": "^1.1.2",
         "ws": "^7.1.2"
     },
     "devDependencies": {

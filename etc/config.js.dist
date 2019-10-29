@@ -1,10 +1,12 @@
 const config = {
-    version: '0.0.16',
+    version: '0.0.17',
     
-    db: {                               /*  Currently syncs database via NeDB, a javascript clone of mongodb */
+    baseDir :'./',              /* Change this */
+    
+    db: {                              /*  Currently syncs database via NeDB, a javascript clone of mongodb */
       enabled: true,
       autoload: true,
-      file: '../sigmonjs.db',
+      file: 'sigmon.db',
       server: '127.0.0.1:27017',        /* WIP */
       hostname: '127.0.0.1',
       port: 27017,
@@ -25,7 +27,7 @@ const config = {
 
         log: {                          /*  *WIP* PM2 handles logs, this is for our own logging module  */
           level: 'info',                
-          file: '../wss.log',
+          file: 'logs/wss.log',
           max_size: 10000000,
           max_files: 1,
         },
@@ -38,7 +40,7 @@ const config = {
     },
     
     sensor: {
-        interface: 'wlan1',             /*   Over-ride with -i on command line                          */
+        interface: 'monitor0',             /*   Over-ride with -i on command line                          */
         reconnect: true,                /*   Default is to reconnect indefinitally                      */
         
         use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng                        */
@@ -47,7 +49,7 @@ const config = {
           save: true,                   /*   Save packets every X seconds                               */
           filter: '',                   /*   pcap filter to apply to packets                            */
           interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap                   */
-          dir: '../data/pcap',
+          dir: 'data/pcap',
         },
 
         gps: {                          /*   If one sensor manages multiple interfaces, how would we    */
@@ -68,7 +70,7 @@ const config = {
           enabled: true,
           channel: 1,                   /*  Fixed channel used when not hopping */
           channels: 11,                 /*  1-11 in the US, 1-13 other places. Other freqs coming soon  */
-          dwell: 500,                   /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
+          dwell: 300,                   /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
                                         /*  some machines get bogged down                               */
         },
 
@@ -82,8 +84,8 @@ const config = {
 
     oui: {                              /*  Keep the OUI registry updated                               */
       update: true,
-      interval: 14,
-      file: '../node_modules/oui/oui.json',
+      interval: 7,                     /*  Every week */
+      file: 'data/oui.json',
     }
 }
 

@@ -1,16 +1,16 @@
-# node signal monitor v 0.0.15
+# node signal monitor v 0.0.17
 
 Simple inspection of WiFi networks.
 
-Web Socket Server: wss.js
-WiFi Sensor Client: sensor.js
+Web Socket Server: smwss
+WiFi Sensor Client: smwifi
 
 
 ```text
 wifi sta -> probe  \    wifi
-     wifi data      >  sensor.js  -
+     wifi data      >  smwifi.js  -
 wifi ap -> beacon  /    pcap      |
-                                wss.js
+                                smwss
                                   |
                        MongoDB -- | -- NeDB
 node-red leaflet map           -- |
@@ -37,7 +37,7 @@ server:
 
 ```text
 npm install -g pm2
-pm2 start bin/wss.js
+pm2 start bin/smwss
 ```
 
 sensor:  
@@ -64,7 +64,7 @@ for more info check out the [node_pcap issues](https://github.com/node-pcap/node
 start the sensor:
 
 ```text
-pm2 start bin/sensor.js
+pm2 start bin/smwifi
 ```
 
 after the flow is deployed, the map will be available at your node-red URL with the endpoint */map*.  

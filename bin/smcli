@@ -23,12 +23,17 @@
 # settings
 */
 
-const cfg = require('../etc/config.js'),
-      wifiChannels = require('../lib/wifichannel')
+var cfg = require('../etc/config')
+
+module.paths.unshift(cfg.baseDir+'lib')
+
+const wifiChannels = require('wifichannel')
 
 const extend   = require('extend'),
       sortkeys = require('sort-keys'),
       sprintf  = require('sprintf-js').sprintf,
+      process  = require('process'),
+      program  = require('commander'),
        player  = require('node-wav-player'),
            hmn = require('human-number'),
            RWS = require('reconnecting-websocket'),
@@ -57,6 +62,8 @@ var sortType     = 2,
     redraw = true,
     drawJSON = false,
     gpsLock = false
+
+process.title = `node smcli.js - sigmon console ${cfg.version}`
 
 Object.keys(wifiChannels.frequencyMap).forEach(f => {
   channelGraph.push(0)
@@ -590,7 +597,7 @@ status1_markdown = devices_grid.set(dim.status1.h, dim.status1.w, dim.status1.x,
 
   status1 = devices_grid.set(dim.logger.x,dim.logger.y,dim.logger.h,dim.logger.w, contrib.log,
       { fg: 'green',
-        padding: 2,
+        padding: 1,
         tags: true,
         selectedFg: 'green',
         label: 'log'})
