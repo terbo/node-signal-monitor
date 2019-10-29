@@ -163,9 +163,11 @@ function sortVendor(a,b) {
 
 
 function playwav(wav) {
-  status1.log(`Playing '${wav}.wav'`)
-  player.play({path: `./data/wav/${wav}.wav`}).then(() => {
-    }).catch((error) => { })
+  if(cfg.console.sound) {
+    status1.log(`Playing '${wav}.wav'`)
+    player.play({path: `./data/wav/${wav}.wav`}).then(() => {
+      }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
+  }
 }
 
 function update() {
@@ -279,6 +281,7 @@ function update() {
     }
       
     out = ` Total APs: __${status_info[0].aps}__ STAs: __${status_info[0].stas}__` +
+          ` (Showing ${Object.keys(devices).length}) ` +
           ` Packets: __${hmn(status_info[0].packets.toPrecision(3))}__\n` +
            ` Showing ${displayTypes[displayType].toUpperCase()} Filtering ${filterTypes[filterType]} ` +
            `sorting${reverse ? ' reverse ' : ' '}by ${sortTypes[sortType]}\n` +
@@ -483,10 +486,23 @@ ws.addEventListener('open', () => {
 })
 
 ws.addEventListener('message', message => {
-  var msg = JSON.parse(message.data)
+  var msg = JSON.parse(message.data),
+    oldnum = Object.keys(devices).length,
+    newnum = Object.keys(msg.data.db).length,
+    total = 0
+
+  //status1.log(`Devices: ${oldnum}`)
+  //status1.log(`msg.data.db ${newnum}`)
+  
   extend(true, devices, msg.data.db)
+  total = Object.keys(devices).length
+
+  if(total > oldnum)
+    playwav('packet')
+
   status_info  = [msg.data.stats, msg.data.info, msg.data.sensors, msg.data.location || msg.location]
- 
+  
+  //status1.log(`Devices After: ${total}`)
 
   update()
 })

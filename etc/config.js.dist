@@ -82,6 +82,7 @@ const config = {
     
     console: {                          /*  Maybe some settings for the blessed/ncurses UI              */
       device_timeout: 160,
+      sound: true,                     /*  Use some kismet sounds?                                     */
     },
 
     oui: {                              /*  Keep the OUI registry updated                               */
