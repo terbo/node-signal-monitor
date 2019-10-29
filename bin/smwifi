@@ -63,7 +63,7 @@ function packet_cb(buf) {
     pkt.iface   = program.iface
     pkt.len     = packet.pcap_header.len
     pkt.pktime  = new Date(packet.pcap_header.tv_sec * 1000)
-    pkt.time  = new Date()
+    pkt.time    = new Date()
     pkt.rssi    = packet.payload.signalStrength
     pkt.rftype  = [rf.type, rf.subType]
     
@@ -149,10 +149,8 @@ ws.addEventListener('open', () => {
  
   hopper.cfg = cfg.hopper
   
-  if(program.disableHopper) {
-    console.info(`Setting channel to ${program.channel}`)
+  if(program.disableHopper)
     hopper.set_channel(program.channel)
-  }
   else
     hopper.start()
   
@@ -161,7 +159,8 @@ ws.addEventListener('open', () => {
 })
 
 ws.addEventListener('close', () => {
-  console.error('Disconnected from websocket')
+  if(hopper.running)
+    hopper.stop()
   
   if(program.disableReconnect)
     process.exit(2)
