@@ -8,7 +8,7 @@ const cfg     = require('../etc/config'),
 const commands = 'dump latest subscribe status'.split(' ')
 
 var args,
-		one_shot  = true,
+    one_shot  = true,
     output_raw = false
 
 prog.version(cfg.version)
@@ -39,29 +39,29 @@ else
   prog.help()
 
 if(prog.args.length >= 2)
-	args = prog.args[1]
+  args = prog.args[1]
 
 if (commands.includes(cmd)) {
-	if(cmd == 'subscribe')
+  if(cmd == 'subscribe')
     prog.oneShot = false
   
   ws.on('open', () => {
-		ws.send(JSON.stringify({cmd: cmd, args: args}))
-	})
+    ws.send(JSON.stringify({cmd: cmd, arg: args}))
+  })
 
-	ws.on('message', (message) => {
-		if(prog.raw)
-			console.info(message)
-		else
-			console.info(JSON.stringify(JSON.parse(message),null,4))
-		
-		if(prog.oneShot) {
-			ws.close()
-			process.exit(0)
-		}
-	})
+  ws.on('message', (message) => {
+    if(prog.raw)
+      console.info(message)
+    else
+      console.info(JSON.stringify(JSON.parse(message),null,4))
+    
+    if(prog.oneShot) {
+      ws.close()
+      process.exit(0)
+    }
+  })
 } else
-	prog.help(() => { const out = `\nInvalid command: ${cmd}\n\n` +
-														  `Valid commands: ${commands.join(' ')}\n`;
-										return out  })
+  prog.help(() => { const out = `\nInvalid command: ${cmd}\n\n` +
+                              `Valid commands: ${commands.join(' ')}\n`;
+                    return out  })
 
