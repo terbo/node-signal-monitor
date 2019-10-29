@@ -17,9 +17,11 @@ const config = {
     server: {
         max_devices: 0,                 /*  *WIP* Maximum number of devices to remember.                */
         device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
+        max_sessions: 15,               /*  Maximum sessions to save                                    */
         session_length: 260000,         /*   *TODO* How many microseconds after a device is noticed     */
                                         /*   do we wait to begin a session? 4 minutes is the default.   */
         
+        loud_device_min:  5,            /*  How many clients or ssids probed for is considered 'loud'?  */
         enable_http: false,             /*  *WIP* Enable web server for UI? */
         enable_websocket: true,         /*   Service connection to sensors and web clients/etc. */
 
