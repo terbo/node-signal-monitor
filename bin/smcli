@@ -484,10 +484,7 @@ ws.addEventListener('open', () => {
 
 ws.addEventListener('message', message => {
   var msg = JSON.parse(message.data)
-  status1.log(`Devices: ${Object.keys(devices).length}`)
-  status1.log(`msg.data.db ${Object.keys(msg.data.db).length} ${Object.keys(msg.data)}`)
   extend(true, devices, msg.data.db)
-  status1.log(`Devices After: ${Object.keys(devices).length}`)
   status_info  = [msg.data.stats, msg.data.info, msg.data.sensors, msg.data.location || msg.location]
  
 

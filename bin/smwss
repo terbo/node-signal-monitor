@@ -400,8 +400,6 @@ function latest(since) {
   updateStats()
   
   
-  console.log(`Returning documents ${since} ms old`) 
-  
   Object.keys(data.db).forEach(k => {
     var dev = data.db[k]
 
@@ -409,7 +407,6 @@ function latest(since) {
       out[k] = data.db[k]
   })
   
-  console.log(`Found ${Object.keys(out).length} documents`)
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
