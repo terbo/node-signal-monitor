@@ -56,6 +56,8 @@ if(cfg.db.enabled && cfg.db.autoload) {
   
     docs.forEach(doc => {
       data.db[doc.mac] = doc
+      data.db[doc.mac].sessions = new deviceSession(false, doc.sessions.sessions)
+
       if(doc.type == 'ap') data.devs.ap.push(doc.mac)
       else if(doc.type == 'sta') data.devs.sta.push(doc.mac)
       if(!data.devs.ssid.includes(doc.ssid)) data.devs.ssid.push(doc.ssid)
@@ -77,12 +79,66 @@ function updateStats() {
   data.stats.uptime = os.uptime()
 }
 
-function session(enter, exit) {
-  return {enter, exit}
+var deviceSession = function(packet=false,sessions=false) {
+  this.sessions = []
+  if(packet)
+    this.sessions = [this._session(packet)]
+  else if(sessions)
+    this.sessions = sessions
+  
+  this.limit = cfg.sensor.max_sessions
+}
+
+deviceSession.prototype.last = function() {
+  if(this.sessions.length)
+    return this.sessions[this.sessions.length-1]
+  else return 0
+}
+
+deviceSession.prototype.add = function(packet) {
+  if(this.sessions.length > this.limit)
+    this.sessions = this.sessions.reverse().splice(0,this.limit).reverse()
+  this.sessions.push(this._session(packet))
+}
+
+deviceSession.prototype.extend = function(pkt) {
+  var now = new Date()
+  
+  if(this.last().maxrssi > pkt.rssi)
+    this.last().maxrssi = pkt.rssi
+  if(this.last().minrssi < pkt.rssi)
+    this.last().minrssi = pkt.rssi
+
+  if(!this.last().sensors.includes(pkt.sensor))
+    this.last().sensors.push(pkt.sensor)
+
+  if( (this.last().location[this.last().location.length - 1].lon != pkt.lon) && 
+      (this.last().location[this.last().location.length - 1].lat != pkt.lat))
+      this.last().location.push({time: now, lon: pkt.lon, lat: pkt.lat, rssi: pkt.rssi, sensor: pkt.sensor})
+
+  this.last().exit = now
+}
+
+deviceSession.prototype._session = function(packet) {
+  var now = new Date(),
+      session = {
+        enter: now,
+        exit: now,
+
+        lastrssi: packet.rssi,
+        maxrssi: packet.rssi,
+        minrssi: packet.rssi,
+
+        sensors: [packet.sensor],
+        location: [ { time: now, lon: packet.lon, lat: packet.lat, rssi: packet.rssi, sensor: packet.sensor } ]
+      }
+
+  return session
 }
 
 function newDevice(pkt) {
   const vendor = getVendor(pkt.mac)
+  const now = new Date()
   
   pkt.vendor = vendor[0]
   pkt.vendorSm = vendor[1]
@@ -94,26 +150,29 @@ function newDevice(pkt) {
       seq: pkt.seq,
       mac: pkt.mac, // store as lc alnum, getmac translates?
       macSm: pkt.macSm, 
-      sensor: [pkt.sensor],
-      lastseen: new Date(pkt.time),
-      firstseen: new Date(pkt.time),
+      sensors: [],
+      lastseen: now,
+      firstseen: now,
       vendor: pkt.vendor, // short, full
       vendorSm: pkt.vendorSm,
       ssid: pkt.ssid,
       rssi: pkt.rssi,
       channel: pkt.channel,
       recvchan: pkt.rcvchan,
-      location: { lon: pkt.lon, lat: pkt.lat },
+      //location: [ { time: new Date(pkt.time), lon: pkt.lon, lat: pkt.lat, rssi: pkt.rssi, sensor: pkt.sensor } ],
       hosts: [], // clients / ssids
       packets: [], // beacons / probes
       totalPackets: 1,
       totalBytes: pkt.len,
       tags: ['new'],
-      sessions: []
+      sessions: new deviceSession(pkt),
   }
+
+  if(pkt.hasOwnProperty('sensor'))
+    tmp.sensors = [pkt.sensor]
+  else if(pkt.hasOwnProperty('sensors'))
+    tmp.sensors = pkt.sensors
       
-  tmp.sessions.push({ enter: tmp.firstseen, exit: tmp.lastseen })
-  
   if((tmp.channel === 0) || (tmp.channel === undefined))
     tmp.channel = tmp.recvchan || 0 // ??
 
@@ -137,7 +196,7 @@ function newDevice(pkt) {
       tmp.hosts.push(tmp.ssid)
     }
   } else { // if(pkt.rftype[0] == 2) {
-    console.info(`+ STA '${tmp.macSm}' for '${tmp.ssid}' from ${pkt.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
+    console.info(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${pkt.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
     tmp.type = 'sta'
 
     tmp.hosts.push(tmp.ssid)
@@ -175,7 +234,7 @@ function getVendor(mac) {
   return ['Unknown', 'None']
 }
 
-function read_packet(msg) {
+function readPacket(msg) {
   const now = new Date()
   try {
     var p = msg.data
@@ -233,60 +292,46 @@ function read_packet(msg) {
     // every session_length, find any clients whose firstseen is session length who arent in the session table
     // err, idk
 
-
     if(data.db.hasOwnProperty(p.mac)) {
       var output = []
 
       // -> tagDevice
-      if(!data.db[p.mac].hasOwnProperty('tags'))
-        data.db[p.mac].tags = []
-      
-      if(!data.db[p.mac].tags.includes('loud') && (data.db[p.mac].hosts.length > 5)) // loud_client_min
+      if(!data.db[p.mac].tags.includes('loud') && (data.db[p.mac].hosts.length > cfg.server.loud_client_min))
         data.db[p.mac].tags.push('loud')
-
-
       var duration = (now.getTime() - data.db[p.mac].lastseen.getTime())
       
-      try {
-      
-      // kludge for old device entries
-      // first time seen
-      if(!data.db[p.mac].hasOwnProperty('sessions'))
-        data.db[p.mac].sessions = [{enter: now, exit: now}]
-
       // has been seen in (4) minutes, extend session exit
       // second time seen
       if(duration < cfg.server.session_length )
-        data.db[p.mac].sessions[data.db[p.mac].sessions.length - 1].exit = now
+        data.db[p.mac].sessions.extend(p)
       
       // was seen (10) minutes ago, lets see how long he was here
-      // seen before, tag repeat/session
       if(duration > (cfg.server.session_length * 2)) {
-        var enter = data.db[p.mac].sessions[data.db[p.mac].sessions.length - 1].enter
-        var exit = data.db[p.mac].sessions[data.db[p.mac].sessions.length - 1].exit
+        var enter = data.db[p.mac].sessions.last().enter
+        var exit = data.db[p.mac].sessions.last().exit
         
         var dwelled = new Date(exit).getTime() - new Date(enter).getTime()
 
         // if dwelled for more than a session length and has returned, tag, and create a new sessoin
-        // however, should simply extend that session, or see how it looks in a chart
+        // however, should simply extend that session, or see how it looks in a chart, could be regular device
 
         if(dwelled > cfg.server.session_length)
           if(!data.db[p.mac].tags.includes('session'))
             data.db[p.mac].tags.push('session')
-        
+         
         //if(now.getTime() - exit < (cfg.server.session_length * 4)
-          // don't really start a new session
+        // don't really start a new session
         //if(now.getTime() - exit < 3600000) // one hour
         // regular 
-          //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${dfl(dwelled)}`)
+        //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${dfl(dwelled)}`)
 
-        data.db[p.mac].sessions.push({enter: now, exit: now})
+        data.db[p.mac].sessions.add(p)
         
         if(data.devs.ap.includes(p.mac))
           output.push(`> AP '${data.db[p.mac].ssid}'`)
         else {
           output.push(`> STA '${data.db[p.mac].macSm}'`)
-            if(p.rftype[0] == 0)
+            if(p.rftype[1] == 4)
               output.push('probed')
             else if(p.rftype[0] == 2)
               output.push('on')
@@ -308,12 +353,14 @@ function read_packet(msg) {
         }
         else*/ 
 
-        if(!data.db[p.mac].tags.includes['returned'])
-          data.db[p.mac].tags.push('returned')
+        // seen before, tag repeat/session
+        if(!data.db[p.mac].tags.includes['repeat'])
+          data.db[p.mac].tags.push('repeat')
 
         console.info(output.join(' '))
-      }} catch(e) { console.log(e)}
+      }
 
+      // no longer a new device
       if(data.db[p.mac].tags.includes('new') && now - data.db[p.mac].firstseen < ( 10 * 60 * 1000))
         data.db[p.mac].tags.splice(data.db[p.mac].tags.indexOf('new'),1)
 
@@ -329,14 +376,11 @@ function read_packet(msg) {
         data.db[p.mac].hosts.push(p.ssid)
         //if(data.devs.includes(p.ssid) && 
  
-      if(!data.db[p.mac].sensor.includes(p.sensor))
-        data.db[p.mac].sensor.push(p.sensor)
+      try{if(!data.db[p.mac].sensors.includes(p.sensor))
+        data.db[p.mac].sensors.push(p.sensor)}catch(e) {console.error('sensors...');console.log(data.db[p.mac])}
 
       data.stats.packets += 1
     }
-
-    // history? sensors? rssi ring buffer?
-  
 
   if(now - data.lastSynced > program.syncInterval) {
     //console.debug('Saving data.')
@@ -355,19 +399,21 @@ function latest(since) {
   var out = {}
   updateStats()
   
-  const now = new Date()
+  
+  console.log(`Returning documents ${since} ms old`) 
   
   Object.keys(data.db).forEach(k => {
-    const dev = data.db[k]
+    var dev = data.db[k]
 
-    if(now.getTime() - dev.lastseen.getTime() <= since)
+    if(new Date().getTime() - new Date(dev.lastseen).getTime() <= since)
       out[k] = data.db[k]
   })
   
+  console.log(`Found ${Object.keys(out).length} documents`)
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
-const wss = new WS.Server({ port: program.port,});
+const wss = new WS.Server({ port: program.port})
  
 console.info(`Listening on port ${program.port}`)
 
@@ -399,7 +445,7 @@ wss.on('connection', (ws, req) => {
     
     if(msg.hasOwnProperty('type')) {
       if(msg.type == 'data') {
-        read_packet(msg)
+        readPacket(msg)
       } else
       if(msg.type == 'log') {
         //read_log(msg)
@@ -443,12 +489,10 @@ wss.on('connection', (ws, req) => {
         
         // subscribe to latest, subscribe to logs, subscribe to status
         // subscribe to location, etc
-        /*if(msg.hasOwnProperty('arg')) {
-          if(msg.arg !== null)
-            duration = parseInt(msg.arg)
-          else
-            duration = cfg.server.ws.subscribe_interval 
-        }*/ 
+        if(msg.hasOwnProperty('arg'))
+          duration = parseInt(msg.arg)
+        else
+          duration = cfg.server.ws.subscribe_interval 
         
         data.clients[id].timer = setInterval(() => { 
           const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
