@@ -42,7 +42,7 @@ program.option('-A, --airmon', 'use airmon-ng to set interface to monitor mode',
 
 program.parse(process.argv)
 
-process.title = `node smwifi.js - ${program.description} v${program.version}`
+process.title = `node smwifi.js - ${program.description()} v${program.version()}`
 
 cfg.hopper.enabled = !program.disableHopper 
 cfg.hopper.channel = program.channel
@@ -145,7 +145,7 @@ ws.addEventListener('open', () => {
   console.info('Connected to websocket ' + program.hostname)
   
   if(!cfg.gps.enabled)
-    gps = {lat: cfg.gps.latitude, lon: cfg.gps.longitude}
+    gps = { location: { lat: cfg.gps.latitude, lon: cfg.gps.longitude, sats: 0} }
  
   hopper.cfg = cfg.hopper
   

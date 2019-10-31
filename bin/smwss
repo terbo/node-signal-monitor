@@ -25,7 +25,7 @@ program.option('-p,--port <port>','port to listen on',cfg.server.ws.port)
 
 program.parse(process.argv)
 
-process.title = `node smwss.js - ${program.description} v${program.version}`
+process.title = `node smwss.js - ${program.description()} v${program.version()}`
 
 var data = {
   lastSynced: new Date(),
