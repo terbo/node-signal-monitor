@@ -164,7 +164,7 @@ function sortVendor(a,b) {
 
 function playwav(wav) {
   if(cfg.console.sound) {
-    status1.log(`Playing '${wav}.wav'`)
+    //status1.log(`Playing '${wav}.wav'`)
     player.play({path: `./data/wav/${wav}.wav`}).then(() => {
       }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
   }
@@ -224,8 +224,6 @@ function update() {
     if(displayTypes[displayType] == 'sta' && dev.type == 'ap')
       return
     
-    dev.ssid = dev.ssid.toLocaleString()
-
     if(carousel.currPage == 0) {
       var lastseen = new Date(dev.lastseen)
       var firstseen = new Date(dev.firstseen)
@@ -253,7 +251,7 @@ function update() {
 
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
         try {
-          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, sprintf('%-.24s',dev.ssid), dev.rssi, dev.channel,
+          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid.padEnd(24,' '), dev.rssi, dev.channel,
                     dev.vendorSm, lastseen.toTimeString().split(' ')[0], dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
         } catch(e) {
           console.log(e) //console.table(dev)
@@ -268,6 +266,7 @@ function update() {
         cpu = 0,
         dbsize = 0,
         running = 0,
+        loc = {}
 
     mem = hmn(status_info[0].memory.rss.toPrecision(3))
     dbsize = hmn(status_info[0].dbsize.toPrecision(3)) 
@@ -287,8 +286,18 @@ function update() {
            `sorting${reverse ? ' reverse ' : ' '}by ${sortTypes[sortType]}\n` +
            `${ !redraw ? '{bold}{red-fg}\t\t\t\t\tPaused updating{/}{/}' : ''}`
 
-    out2 = ` Lon/Lat: __${status_info[3].lon.toPrecision(7)}__, __${status_info[3].lat.toPrecision(7)}__` +
-           `  Sats: __${status_info[3].sats}__\n` +
+    loc.lon = status_info[3].lon || 0
+    loc.lat = status_info[3].lat || 0
+    loc.sats = status_info[3].sats || 0
+
+    if(loc.lon && loc.lon !== 0)
+      loc.lon = Number(loc.lon).toPrecision(7)
+    
+    if(loc.lat && loc.lat !== 0)
+      loc.lat = Number(loc.lat).toPrecision(7)
+
+    out2 = ` Lon/Lat: __${loc.lon}__, __${loc.lat}__` +
+           `  Sats: __${loc.sats}__\n` +
            ` Mem: {bold}${mem}{/} DB: {bold}${dbsize}{/}\n\n` +
            ` Server: {bold}${status_info[1].hostname}{/}:{bold}${status_info[1].port}` +
            ` / {green-fg}${status_info[1].version}{/}`
@@ -361,6 +370,11 @@ function do_exit(s) {
 screen.key(['escape', 'q', 'C-c'], do_exit)
 
 screen.key('C-d', () => { ws.send(JSON.stringify({'cmd': 'dump'})) })
+
+screen.key('C-s', () => {
+  cfg.console.sound = !cfg.console.sound
+  status1.log('Sound ' + (cfg.console.sound ? 'enabled' : 'disabled'))
+})
 
 screen.key(['s'], (ch, key) => {
   if(carousel.currPage !== 0)
@@ -445,7 +459,7 @@ screen.key('/', () => {
       var row = device_table.rows.children[i]
       
       if(row.content.match(data)) {
-        status1.log(row.content)
+        status2.setMarkdown(row.content)
       }
     })
   })
@@ -493,7 +507,7 @@ ws.addEventListener('message', message => {
 
   //status1.log(`Devices: ${oldnum}`)
   //status1.log(`msg.data.db ${newnum}`)
-  
+
   extend(true, devices, msg.data.db)
   total = Object.keys(devices).length
 
@@ -501,7 +515,7 @@ ws.addEventListener('message', message => {
     playwav('packet')
 
   status_info  = [msg.data.stats, msg.data.info, msg.data.sensors, msg.data.location || msg.location]
-  
+ 
   //status1.log(`Devices After: ${total}`)
 
   update()
@@ -568,9 +582,9 @@ const dim = {
 }
 
 function devices_page() {
-devices_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
+  devices_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
 
-status1_markdown = devices_grid.set(dim.status1.h, dim.status1.w, dim.status1.x,dim.status1.y, contrib.markdown, {
+  status1_markdown = devices_grid.set(dim.status1.h, dim.status1.w, dim.status1.x,dim.status1.y, contrib.markdown, {
     tags: true,
     interactive: false
   })
@@ -663,7 +677,7 @@ var helpText,
     left: 'center',
     width: 'shrink',
     draggable: true,
-    height: 11,
+    height: 15,
     padding: 1,
     tags: true,
     border: {
@@ -686,6 +700,8 @@ helpText = `{bold}sigmon console version ${cfg.version}{/}` +
            '[s] sort [r] reverse [enter] info\n' +
            '[f] filter [z] pause [q] quit' +
            '\n\n' +
+           'Control-D: Request ALL data from server\n' +
+           'Control-S: Toggle Sound\n\n\n' +
            'press enter to exit this help screen'
 
 helpBox.setContent(helpText)
