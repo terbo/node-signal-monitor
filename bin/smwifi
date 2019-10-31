@@ -50,8 +50,8 @@ cfg.hopper.dwell = program.dwell
 cfg.hopper.iface = program.iface
 
 program.location = program.location.split(',')
-cfg.gps.longitude = program.location[0]
-cfg.gps.latitude = program.location[1]
+cfg.gps.longitude = program.location[1]
+cfg.gps.latitude = program.location[0]
 
 function packet_cb(buf) {
   try {

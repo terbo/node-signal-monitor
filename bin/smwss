@@ -245,6 +245,7 @@ function readPacket(msg) {
     if(data.sensors.hasOwnProperty(sensor)) {
       data.sensors[sensor].packets += 1
       data.sensors[sensor].lastseen = now
+      data.sensors[sensor].location = { lon: p.lon, lat: p.lat }
     }
     else {
       data.sensors[sensor] = { lastseen: now,
