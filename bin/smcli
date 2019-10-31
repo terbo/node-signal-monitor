@@ -183,7 +183,7 @@ function update() {
 
     dev.tags = []
 
-    if(mac in cfg.sensor.alert) { // that wascally wabbit...
+    if(cfg.sensor.alert.includes(mac)) { // that wascally wabbit...
       playwav('alert')
       status1.log(`${mac} seen @ ${now}`)
       dev.tags.push('alert')
