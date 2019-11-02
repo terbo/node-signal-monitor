@@ -38,7 +38,7 @@ var data = {
   db: {},
   sensors: {},
   location: { lon: 0, lat: 0, sats: 0 },
-  stats: { packets: 0, errors: 0, runtime: 0, cpu: 0, dbsize: 0,
+  stats: { packets: 0, errors: 0, cpu: 0, dbsize: 0,
            memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0
          },
   info: { start_time: new Date(), port: program.port,
@@ -84,8 +84,7 @@ function updateStats() {
 
   data.stats.cpu = process.cpuUsage()
   data.stats.memory = process.memoryUsage()
-  data.stats.runtime = process.uptime()
-  data.stats.uptime = getDuration(os.uptime())
+  data.stats.uptime = getDuration(os.uptime() * 1000)
 }
 
 // I want to do new wifiRecord or something, and put in seperate library
@@ -197,9 +196,7 @@ function readWifiPacket(msg) {
               data.db[src] = newWifiDevice(packet)
           }
       }
-    }
-
-    if(data.db.hasOwnProperty(packet.mac)) {
+    } else if(data.db.hasOwnProperty(packet.mac)) {
       var output = []
 
       // -> tagDevice
@@ -230,7 +227,7 @@ function readWifiPacket(msg) {
         // don't really start a new session
         //if(now.getTime() - exit < 3600000) // one hour
         // regular 
-        //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${dfl(dwelled)}`)
+        //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${getDuration(dwelled)}`)
 
         data.db[packet.mac].sessions.add(packet)
         
@@ -268,7 +265,7 @@ function readWifiPacket(msg) {
       }
 
       // no longer a new device
-      if(data.db[packet.mac].tags.includes('new') && now - data.db[packet.mac].firstseen < ( 10 * 60 * 1000))
+      if(data.db[packet.mac].tags.includes('new') && (now - data.db[packet.mac].firstseen < ( 10 * 60 * 1000)))
         data.db[packet.mac].tags.splice(data.db[packet.mac].tags.indexOf('new'),1)
 
       data.db[packet.mac].location = { lon: packet.lon, lat: packet.lat }
@@ -288,26 +285,20 @@ function readWifiPacket(msg) {
 
       data.stats.packets += 1
     } else {
-      console.log('Is this necessary?')
+      console.error(`Capture: Unrecognized device or packet type: ${JSON.stringify(packet.rftype)} ${packet.mac}`)
+      console.dir(packet)
+      return
     }
-
   } catch (e) {
     console.error(`Decode Packet: ${e}`)
     data.stats.errors += 1
   }
-
-  checkSync()
 }
   
-function checkSync() {
-  const now = new Date()
-  
-  if(now - data.lastSynced > program.syncInterval) {
-    store.sync(data.db, (err, docs) => { if(err) throw err})
-    data.lastSynced = now
-  }
+function syncDB() {
+  store.sync(data.db, (err, docs) => { if(err) { console.error(`Syncing: ${err}`) } })
+  data.lastSynced = new Date()
 }
-  
 
 function latest(since) {
   var out = {}
@@ -328,6 +319,7 @@ const wss = new WS.Server({ port: program.port})
  
 console.info(`Listening on port ${program.port}`)
 
+var syncTimer = setInterval(syncDB, program.syncInterval)
 
 wss.on('connection', (ws, req) => {
   const ip = req.connection.remoteAddress
@@ -466,8 +458,5 @@ wss.on('connection', (ws, req) => {
     } else {
       console.error(`Invalid packet: ${message}`)
     }
-
-    checkSync()
-
   })
 })
