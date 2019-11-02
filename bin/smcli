@@ -68,8 +68,6 @@ var sortType     = 2,
     drawJSON = false,
     gpsLock = false
 
-process.title = `node smcli.js - sigmon console ${cfg.version}`
-
 Object.keys(wifiChannels.frequencyMap).forEach(f => {
   channelGraph.push(0)
 })
@@ -169,7 +167,7 @@ function sortVendor(a,b) {
 
 function playwav(wav) {
   if(cfg.console.sound) {
-    status1.log(`Playing '${wav}.wav'`)
+    //status1.log(`Playing '${wav}.wav'`)
     player.play({path: `./data/wav/${wav}.wav`}).then(() => {
       }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
   }
