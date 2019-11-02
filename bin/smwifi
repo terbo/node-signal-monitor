@@ -30,6 +30,7 @@ cfg = cfg.sensor
 
 program.option('-A, --airmon', 'use airmon-ng to set interface to monitor mode', cfg.use_airmon_ng)
        .option('-i, --iface <interface>', 'interface to listen on', cfg.interface)
+       .option('-n, --name <sensor>', 'name of this sensor', hostname)
        .option('-s, --hostname <hostname>', 'websocket hostname', cfg.ws.hostname)
        .option('-p, --port <port>', 'websocket port', cfg.ws.port)
        .option('-C, --channel <channel>', 'use fixed channel', cfg.hopper.channel)
@@ -42,8 +43,6 @@ program.option('-A, --airmon', 'use airmon-ng to set interface to monitor mode',
 
 program.parse(process.argv)
 
-process.title = `node smwifi.js - ${program.description()} v${program.version()}`
-
 cfg.hopper.enabled = !program.disableHopper 
 cfg.hopper.channel = program.channel
 cfg.hopper.dwell = program.dwell
@@ -55,11 +54,11 @@ cfg.gps.latitude = program.location[0]
 
 function packet_cb(buf) {
   try {
-    const packet = pcap.decode.packet(buf),
-            rf = packet.payload.ieee802_11Frame
-    var pkt  = {}
+    var packet = pcap.decode.packet(buf),
+            rf = packet.payload.ieee802_11Frame,
+          pkt  = {}
 
-    pkt.sensor  = hostname
+    pkt.sensor  = program.name
     pkt.iface   = program.iface
     pkt.len     = packet.pcap_header.len
     pkt.pktime  = new Date(packet.pcap_header.tv_sec * 1000)
@@ -112,7 +111,9 @@ function packet_cb(buf) {
       pkt.src = rf.shost.toString()
     }
     
-    if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.len <= 1))
+    if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.len <= 1) ||
+      //((pkt.ssid.charCodeAt[0] > 255) && (pkt.ssid.charCodeAt[pkt.ssid.length - 1] > 255)))
+      ((pkt.ssid[0] == '\u0000') && (pkt.ssid[pkt.ssid.length - 1] == '\u0000')))
       if(rf.subType != 4)
         pkt.ssid = '[hidden]'
       else if(rf.subType == 4)
@@ -121,7 +122,7 @@ function packet_cb(buf) {
       //  pkt.ssid = '[hidden]'
      
     const msg = JSON.stringify({type: 'data', interface: program.iface,
-                          sensor: hostname, location: gps.location, data: pkt})
+                          sensor: program.name, location: gps.location, data: pkt})
     ws.send(msg)
   } catch (e) {
     /*errors += 1
