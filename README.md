@@ -22,7 +22,7 @@ node-red leaflet map           -- |
 
 Incomplete code, beware. *Note*: Web UI currently broken.
 
-Documentation will soon be moved to the [wiki](wiki/)
+Documentation will soon be moved to the [wiki](https://github.com/terbo/node-signal-monitor/wiki)
 
 __While the web socket server only needs write access for the database,  
 the sensor program either requires root access or some sort of suid-ness.__
