@@ -42,6 +42,11 @@ const extend   = require('extend'),
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
 
+program.option('-s, --server <server>', 'sigmon server to connect to',cfg.sensor.ws.hostname)
+program.option('-p, --port <port>', 'port to connect to',cfg.sensor.ws.port)
+
+program.parse(process.argv)
+
 var blessed = require('blessed'),
      contrib = require('blessed-contrib'),
      screen = blessed.screen({ debug: true,
@@ -79,7 +84,7 @@ Object.keys(wifiChannels.frequencyMap).forEach(f => {
 
 const sortFn = [ sortByType, sortVendor, sortRSSI, sortSSID, sortChannel, sortLast, sortClients, sortBytes ]
 const sortTypes = ['Type', 'Vendor', 'RSSI', 'SSID', 'Channel','Lastseen','STAs','Bytes']
-const filterTypes = ['None','Proximity','Far','OUI','Unknown','Regular','New', 'Alert'] //,'Owned']
+const filterTypes = ['None','Proximity','Far','OUI','Unknown','Regular','Recent', 'Alert'] //,'Owned']
 
 function sortByType(a,b) {
   if(devices[a].type > devices[b].type)
@@ -164,7 +169,7 @@ function sortVendor(a,b) {
 
 function playwav(wav) {
   if(cfg.console.sound) {
-    //status1.log(`Playing '${wav}.wav'`)
+    status1.log(`Playing '${wav}.wav'`)
     player.play({path: `./data/wav/${wav}.wav`}).then(() => {
       }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
   }
@@ -175,12 +180,16 @@ function update() {
   
   var rows = [],
       now = new Date(),
-      nowH = now.getMinutes() + ':' + now.getSeconds()
+      nowH = now.getHours().toString().padStart(2,0) + ':' +
+             now.getMinutes().toString().padStart(2,0) + ':' +
+             now.getSeconds().toString().padStart(2,0),
+      nowS = now.getTime()
   
   Object.keys(sortkeys(devices,{compare: sortFn[sortType]})).forEach(mac => {
     var dev = devices[mac],
-        sensors
-
+        sensors = '',
+        lastseen = new Date(dev.lastseen).getTime(),
+        firstseen = new Date(dev.firstseen).getTime()
     dev.tags = []
 
     if(cfg.sensor.alert.includes(mac)) { // that wascally wabbit...
@@ -189,35 +198,39 @@ function update() {
       dev.tags.push('alert')
     } 
     
-    if(mac in cfg.sensor.ignore)
+    if(cfg.sensor.ignore.includes(mac))
       return
-    
+
     dev.sensors.forEach(sensor => {
       if(!packetGraph.hasOwnProperty(sensor))
-      packetGraph[sensor] = { title: sensor, style: { line: colors.pop()}, x: [], y: [] }
+        packetGraph[sensor] = { title: sensor, style: { line: colors.pop()}, x: [], y: [] }
 
-    var l = packetGraph[sensor].x.length - 1
+      // get the index of the last data column
+      var lastIdx = packetGraph[sensor].x.length - 1
 
-    if(packetGraph[sensor].x[l] != nowH)
-      packetGraph[sensor].x.push(nowH)
-    
-    var y = packetGraph[sensor].y.length - 1
-    
-    if(y < l)
-      packetGraph[sensor].y[l] = 1
-    else
-      packetGraph[sensor].y[l] += 1
+      // if(packetGraph[sensor].x[lastIdx] != nowH)
+        packetGraph[sensor].x.push(nowH)
+
+      var lastCol = packetGraph[sensor].y.length - 1
+
+      // now increase the number of packets
+      if(lastCol < lastIdx)
+        packetGraph[sensor].y[lastIdx] = 1
+      else
+        packetGraph[sensor].y[lastIdx] += 1
     })
 
     if(dev.channel && dev.channel >= 1 && dev.channel <= 11) {
       if(dev.type == 'ap')
         channelGraph[dev.channel - 1] += 1
-     } else
+     } else // fudge, shouldn't be needed
        dev.channel = 13
 
-    if(filterType == 6 && now > dev.lastseen + cfg.console.device_timeout)
+    if(filterTypes[filterType] == 'Recent' && (nowS > (lastseen + cfg.console.device_timeout)))
       return
-    
+    else
+      dev.tags.push('recent')
+
     if(displayTypes[displayType] == 'ap' && dev.type == 'sta')
       return
     
@@ -225,18 +238,16 @@ function update() {
       return
     
     if(carousel.currPage == 0) {
-      var lastseen = new Date(dev.lastseen)
-      var firstseen = new Date(dev.firstseen)
       
-      if(now > (firstseen + cfg.console.device_timeout))
+      if(nowS > (firstseen + cfg.console.device_timeout))
         dev.tags.push('new')
       
-      else if(((firstseen - now) > 30000) && (now < (lastseen + 3000)))
+      else if(((firstseen - nowS) > 30000) && (now < (lastseen + 3000)))
         dev.tags.push('session')
 
-      if(dev.rssi > -45)
+      if(dev.rssi > cfg.console.close_rssi)
         dev.tags.push('proximity')
-      else if(dev.rssi < -65)
+      else if(dev.rssi < cfg.console.far_rssi)
         dev.tags.push('far')
       
       if(dev.vendor == 'Unknown')
@@ -251,10 +262,10 @@ function update() {
 
       if(filterType === 0 || dev.tags.includes(filterTypes[filterType].toLowerCase()))
         try {
-          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid.padEnd(24,' '), dev.rssi, dev.channel,
-                    dev.vendorSm, lastseen.toTimeString().split(' ')[0], dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
+          rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid.substr(0,24).padEnd(24,' '), dev.rssi, dev.channel,
+                    dev.vendorSm, new Date(lastseen).toTimeString().split(' ')[0], dev.hosts.length, hmn(dev.totalBytes.toPrecision(3))])
         } catch(e) {
-          console.log(e) //console.table(dev)
+          console.log(e)
         }
     }
   })
@@ -270,6 +281,7 @@ function update() {
 
     mem = hmn(status_info[0].memory.rss.toPrecision(3))
     dbsize = hmn(status_info[0].dbsize.toPrecision(3)) 
+    
     if(!gpsLock && (status_info[3].sats >= 5)) {
       playwav('gpslock')
       gpsLock = true
@@ -304,8 +316,8 @@ function update() {
 
     running = status_info[0].uptime
     
-    var sensors = ''
-    now = new Date()
+    var sensors = '',
+            now = new Date()
     
     Object.keys(status_info[2]).forEach(sensor => {
       sensors += `__${sensor}__ (${hmn(status_info[2][sensor].packets.toPrecision(3))}) `
@@ -326,10 +338,12 @@ function update() {
     if(Object.keys(packetGraph).length)
       packet_graph.setData(Object.values(packetGraph))
     
-    try{
-      channel_bar.setData( {
-      titles: Object.values(wifiChannels.frequencyMap) , data: channelGraph }) }
-    catch(e) {
+    try {
+      channel_bar.setData({
+        titles: Object.values(wifiChannels.frequencyMap),
+        data: channelGraph })
+    }
+    catch (e) {
       console.log(e)
       console.table(channelGraph)
     }
@@ -337,7 +351,7 @@ function update() {
   
   if(redraw && carousel.currPage == 0)
     try {
-      device_table.setData({ headers: headers, data: rows})
+      deviceTable.setData({ headers: headers, data: rows})
     }
     catch (e) {
       console.error(e)
@@ -347,6 +361,38 @@ function update() {
 
   screen.render()
 }
+
+function do_search(err, data) {
+  if (err) throw err;
+  
+  searchBox.hide()
+  var re = new RegExp(data,'i')
+  var matches = []
+ 
+  // # of table entries likely less than devices.. redundant though
+  /*Object.keys(deviceTable.rows.children).forEach(i => {
+    var row = deviceTable.rows.children[i]
+
+    if(row.content.match(re)) {
+      var mac = row.content.split(/\s+/)[2]*/
+    Object.keys(devices).forEach((mac) => { 
+      Object.keys(devices[mac]).forEach((field) => {
+        try{if(devices[mac][field].toString().match(re) && (!['vendorSm','_id'].includes(field)))
+          matches.push(`${mac}: ${field} ${devices[mac][field]}`)} catch(e) { status1.log(mac) }
+      })
+    })
+
+  if(Object.keys(matches).length) {
+    status1.log(`Found ${matches.length} matches for {bold}${data}{/}`)
+    
+    searchBox.hide()
+    searchResults.setItems(matches)
+    searchResults.show()
+    searchResults.focus()
+    screen.render()
+  }
+}
+
 
 function do_exit(s) {
   screen.destroy()
@@ -414,18 +460,36 @@ screen.key(['f'], (ch, key) => {
 
 screen.key(['i'], (ch, key) => {
   if(carousel.currPage !== 0)
-    return 
+    return
+
   drawJSON = !drawJSON
+  
   if(drawJSON)
     status1.log('Drawing JSON in Info Window')
   else
     status1.log('Drawing Markdown in Info Window')
-  update()
+  
+  screen.render()
+})
+
+screen.key(['m'], (ch, key) => {
+  if(carousel.currPage !== 0)
+    return
+  if(searchResults.focused) {
+    searchResults.hide()
+    deviceTable.show()
+    deviceTable.focus()
+  }
+  else
+    searchResults.show()
+    searchResults.focus()
+  screen.render()
 })
 
 screen.key(['z'], (ch, key) => {
   if(carousel.currPage !== 0)
     return 
+  
   redraw = !redraw
   
   if(redraw)
@@ -437,38 +501,29 @@ screen.key(['z'], (ch, key) => {
 })
 
 screen.key('h', () => {
-  helpBox.show()
-  helpBox.focus()
+  if(helpBox.focused) {
+    helpBox.hide()
+    deviceTable.show()
+    deviceTable.focus()
+  } else {
+    status1.log('Showing help')
+    helpBox.show()
+    helpBox.focus()
+  }
   screen.render()
 })
 
 screen.key('/', () => {
   searchBox.show()
   searchBox.focus()
-  searchBox.input('Search:', '', function(err, data) {
-    if (process.argv[2] === 'resume') {
-      process.stdin.resume();
-    } else if (process.argv[2] === 'end') {
-      process.stdin.setRawMode(false);
-      process.stdin.end();
-    }
-    if (err) throw err;
-    searchBox.hide()
-    //status1.log(`Got: '${data}'`)
-    Object.keys(device_table.rows.children).forEach(i => {
-      var row = device_table.rows.children[i]
-      
-      if(row.content.match(data)) {
-        status2.setMarkdown(row.content)
-      }
-    })
-  })
-  screen.render()
+  searchBox.input('Search:', '', do_search)
 })
 
 screen.key(['tab'], () => {
-  if(carousel.currPage == (carousel.pages.length - 1))
+  if(carousel.currPage == (carousel.pages.length - 1)) {
     carousel.home()
+    deviceTable.focus()
+  }
   else
     carousel.next()
   
@@ -492,10 +547,10 @@ screen.key(['1','2'], (ch, key) => {
 //               //
 
 
-const ws = new WS(`ws://${cfg.sensor.ws.hostname}:${cfg.sensor.ws.port}/ws`, [], { WebSocket: WS })
+const ws = new WS(`ws://${program.server}:${program.port}/ws`, [], { WebSocket: WS })
 
 ws.addEventListener('open', () => {
-  status1.log('Connected to websocket ' + cfg.sensor.ws.hostname)
+  status1.log('Connected to websocket ' + program.server)
   ws.send(JSON.stringify({'cmd': 'subscribe'}))
 })
 
@@ -554,6 +609,7 @@ function drawInfo(mac) {
     out = JSON.stringify(dev,null,2)
 
   info_markdown.setMarkdown(out)
+	status1.log(`Showing info for {bold}${mac}{/}`)
   update()
 }
 
@@ -565,7 +621,7 @@ function drawInfo(mac) {
 
 var colors = ['yellow','cyan','red','white','blue','green']
 
-var devices_grid, device_table, graphics_grid, status1_markdown, status2_markdown, device_markdown, channel_graph, packet_graph
+var devices_grid, deviceTable, graphics_grid, status1_markdown, status2_markdown, device_markdown, channel_graph, packet_graph
 var status1, status2, server_log, packet_graph, channel_bar, device_markdown, status_info, keys, info_markdown
 
 // Dimensions for table - yaml?
@@ -579,6 +635,9 @@ const dim = {
   logger:  {h: 1, w: 8, x: 9, y: 0},
   info: {h: 10, w: 3, x: 0, y: 8},
   devTbCols: [4, 11, 18, 24, 4, 3, 11, 11, 5, 12],
+  devTb: {w: '60%', h: '50%'},
+  sBox: {w: '50%', h: 'shrink'},
+  sRes: {w: '50%', h: 'shrink'},
 }
 
 function devices_page() {
@@ -594,7 +653,7 @@ function devices_page() {
     interactive: false
   })
 
-  device_table = devices_grid.set(dim.devTable.h, dim.devTable.w, dim.devTable.x,dim.devTable.y, contrib.table,
+  deviceTable = devices_grid.set(dim.devTable.h, dim.devTable.w, dim.devTable.x,dim.devTable.y, contrib.table,
      { keys: true,
        mouse: true,
        vi: true,
@@ -605,19 +664,19 @@ function devices_page() {
        label: 'Active',
        noCellBorders: true,
        interactive: true,
-       width: '60%',
-       height: '50%',
+       width: dim.devTb.w,
+       height: dim.devTb.h,
        border: {
         type: 'ascii',
         fg: 'cyan'},
        columnSpacing: 3, // in chars
        columnWidth: dim.devTbCols })
   
-  device_table.rows.on('select',(i,idx) => {
+  deviceTable.rows.on('select',(i,idx) => {
     try {
       var selected = i.content.match(/[0-9a-f]{1,2}([\.:-])(?:[0-9a-f]{1,2}\1){4}[0-9a-f]{1,2}/)
       drawInfo(selected[0])
-    } catch (e) {}
+    } catch (e) {console.log(e)}
   })
 
   info_markdown = devices_grid.set(dim.info.x,dim.info.y, dim.info.h, dim.info.w, contrib.markdown,
@@ -634,7 +693,8 @@ function devices_page() {
         selectedFg: 'green',
         label: 'log'})
   
-  device_table.focus()
+  deviceTable.show()
+  deviceTable.focus()
 }
 
 function graphics_page() {
@@ -661,12 +721,41 @@ function graphics_page() {
         })
 }
 
+var searchResults = blessed.list({  
+  parent: screen,
+  title: 'search results',
+  width: '40%',
+  height: '30%',
+  top: 'center',
+  left: 'center',
+  align: 'center',
+  fg: 'white',
+  border: {
+    type: 'line'
+  },
+  selectedBg: 'blue',
+  mouse: true,
+  keys: true,
+  vi: true,
+  tags: true,
+})
+
+searchResults.on('select',(i,idx) => {
+  try {
+    var mac = i.content.split(': ')[0]
+    drawInfo(mac)
+    searchResults.hide()
+    deviceTable.focus()
+    screen.render()
+  } catch (e) { console.log(e)}
+})
+
 var searchBox = blessed.prompt({
   parent: screen,
   left: 'center',
   top: 'center',
-  width: '40%',
-  height: 'shrink',
+  width: dim.sBox.w,
+  height: dim.sBox.h,
   border: 'line'
 })
 
@@ -708,6 +797,8 @@ helpBox.setContent(helpText)
 
 helpBox.on('keypress', () => {
   helpBox.hide()
+  deviceTable.show()
+  deviceTable.focus()
   screen.render()
 })
   
@@ -718,7 +809,12 @@ var carousel = new contrib.carousel( [devices_page, graphics_page]
 
 carousel.start()
 
+// all this needs to go in the page...
 screen.append(helpBox)
 screen.append(searchBox)
+screen.append(searchResults)
+searchResults.hide()
+
+helpBox.focus()
 
 setTimeout(() => { helpBox.hide() }, 1000)
