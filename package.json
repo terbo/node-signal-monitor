@@ -1,7 +1,7 @@
 {
     "name": "node-signal-monitor",
     "description": "Node Signal Monitor",
-    "version": "0.0.16",
+    "version": "0.0.18",
     "private": true,
     "homepage": "https://github.com/terbo/node-signal-monitor",
     "bugs": {
