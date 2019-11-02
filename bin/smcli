@@ -41,11 +41,14 @@ const extend   = require('extend'),
 
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
+program.name('sigmon console client')
+       .version(cfg.version)
+       .description('curses browser for collected radio information')
 
-program.option('-s, --server <server>', 'sigmon server to connect to',cfg.sensor.ws.hostname)
-program.option('-p, --port <port>', 'port to connect to',cfg.sensor.ws.port)
-program.option('-S, --no-sound', 'disable color',cfg.console.sound)
-program.option('-a, --alert <mac/ssid>', 'display alerts for entities',cfg.sensor.alert)
+program.option('-s, --server <server>', 'sigmon server to connect to', cfg.sensor.ws.hostname)
+       .option('-p, --port <port>', 'port to connect to', cfg.sensor.ws.port)
+       .option('-a, --alert <mac/ssid>', 'display alerts for entities', cfg.sensor.alert)
+       .option('-S, --disable-sound', 'disable sound', !cfg.console.sound)
 
 program.parse(process.argv)
 
@@ -85,6 +88,7 @@ Object.keys(wifiChannels.frequencyMap).forEach(f => {
 const sortFn = [ sortByType, sortVendor, sortRSSI, sortSSID, sortChannel, sortLast, sortClients, sortBytes ]
 const sortTypes = ['Type', 'Vendor', 'RSSI', 'SSID', 'Channel','Lastseen','STAs','Bytes']
 const filterTypes = ['None','Proximity','Far','OUI','Unknown','Regular','Recent', 'Alert'] //,'Owned']
+
 
 function sortByType(a,b) {
   if(devices[a].type > devices[b].type)
@@ -168,7 +172,7 @@ function sortVendor(a,b) {
 
 
 function playwav(wav) {
-  if(program.sound) {
+  if(!program.disableSound) {
     //status1.log(`Playing '${wav}.wav'`)
     player.play({path: `./data/wav/${wav}.wav`}).then(() => {
       }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
@@ -418,8 +422,8 @@ screen.key(['escape', 'q', 'C-c'], do_exit)
 screen.key('C-d', () => { ws.send(JSON.stringify({'cmd': 'dump'})) })
 
 screen.key('C-s', () => {
-  program.sound = !program.sound
-  status1.log('Sound ' + (program.sound ? 'enabled' : 'disabled'))
+  program.disableSound = !program.disableSound
+  status1.log('Sound ' + (program.disableSound ? 'disabled' : 'enabled'))
 })
 
 screen.key(['s'], (ch, key) => {
