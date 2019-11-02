@@ -6,12 +6,17 @@ module.paths.unshift(cfg.baseDir+'lib')
 
 const fs       = require('fs'),
       os       = require('os'),
-      oui      = require('oui'),
       WS       = require('ws'),
-      dfl      = require('duration-format-let'),
       process  = require('process'),
-      program  = require('commander'),
-      store    = require('db-nedb')
+      program  = require('commander')
+
+
+const smutils       = require('smutils'),
+      store = require('db-nedb'),
+			getVendor     = smutils.getVendor,
+			getDuration   = smutils.getDuration,
+      wifiDevice    = require('wifiDevice').wifiDevice,
+      deviceSession = require('deviceSession').deviceSession
 
 require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
@@ -22,20 +27,19 @@ program.name('sigmon websocket server')
 program.option('-p,--port <port>','port to listen on',cfg.server.ws.port)
        .option('-l,--host <ip>','ip to bind to',cfg.server.ws.hostname)
        .option('-i,--sync-interval <millisecs>','seconds between syncing data ',cfg.db.sync_interval)
+       .option('-d,--dbfile <file>','json database file to use', `${cfg.baseDir}${cfg.db.file}`)
 
 program.parse(process.argv)
 
-process.title = `node smwss.js - ${program.description()} v${program.version()}`
-
 var data = {
   lastSynced: new Date(),
-  clients: [],
+  clients: {},
   devs: { ap: [], sta: [], ssid: [] },
   db: {},
   sensors: {},
-  location: { lon: 0, lat: 0 },
+  location: { lon: 0, lat: 0, sats: 0 },
   stats: { packets: 0, errors: 0, runtime: 0, cpu: 0, dbsize: 0,
-           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0,
+           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0
          },
   info: { start_time: new Date(), port: program.port,
           hostname: os.hostname(), versions: process.versions,
@@ -48,6 +52,8 @@ var data = {
 console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`)
 
 if(cfg.db.enabled && cfg.db.autoload) {
+  store.load(program.dbfile)
+
   store.read((err, docs) => {
     if(err) {
       console.error(err);
@@ -64,6 +70,9 @@ if(cfg.db.enabled && cfg.db.autoload) {
     })
 
     console.info(`Loaded ${Object.keys(data.db).length} devices`)
+    // somehow this still misses a few dozen of the first packets sent
+    // before it loads data.db ...
+
   })
 }
 
@@ -76,127 +85,53 @@ function updateStats() {
   data.stats.cpu = process.cpuUsage()
   data.stats.memory = process.memoryUsage()
   data.stats.runtime = process.uptime()
-  data.stats.uptime = os.uptime()
+  data.stats.uptime = getDuration(os.uptime())
 }
 
-var deviceSession = function(packet=false,sessions=false) {
-  this.sessions = []
-  if(packet)
-    this.sessions = [this._session(packet)]
-  else if(sessions)
-    this.sessions = sessions
-  
-  this.limit = cfg.sensor.max_sessions
-}
-
-deviceSession.prototype.last = function() {
-  if(this.sessions.length)
-    return this.sessions[this.sessions.length-1]
-  else return 0
-}
-
-deviceSession.prototype.add = function(packet) {
-  if(this.sessions.length > this.limit)
-    this.sessions = this.sessions.reverse().splice(0,this.limit).reverse()
-  this.sessions.push(this._session(packet))
-}
-
-deviceSession.prototype.extend = function(pkt) {
-  var now = new Date()
-  
-  if(this.last().maxrssi > pkt.rssi)
-    this.last().maxrssi = pkt.rssi
-  if(this.last().minrssi < pkt.rssi)
-    this.last().minrssi = pkt.rssi
-
-  if(!this.last().sensors.includes(pkt.sensor))
-    this.last().sensors.push(pkt.sensor)
-
-  if( (this.last().location[this.last().location.length - 1].lon != pkt.lon) && 
-      (this.last().location[this.last().location.length - 1].lat != pkt.lat))
-      this.last().location.push({time: now, lon: pkt.lon, lat: pkt.lat, rssi: pkt.rssi, sensor: pkt.sensor})
-
-  this.last().exit = now
-}
-
-deviceSession.prototype._session = function(packet) {
-  var now = new Date(),
-      session = {
-        enter: now,
-        exit: now,
-
-        lastrssi: packet.rssi,
-        maxrssi: packet.rssi,
-        minrssi: packet.rssi,
-
-        sensors: [packet.sensor],
-        location: [ { time: now, lon: packet.lon, lat: packet.lat, rssi: packet.rssi, sensor: packet.sensor } ]
-      }
-
-  return session
-}
-
-function newDevice(pkt) {
-  const vendor = getVendor(pkt.mac)
+// I want to do new wifiRecord or something, and put in seperate library
+function newWifiDevice(packet) {
+  const vendor = getVendor(packet.mac)
   const now = new Date()
   
-  pkt.vendor = vendor[0]
-  pkt.vendorSm = vendor[1]
-  pkt.macSm = pkt.mac.substr(12,14).replace(':','')
+  packet.vendor = vendor[0]
+  packet.vendorSm = vendor[1]
+  packet.macSm = packet.mac.substr(12,14).replace(':','')
   
-  var tmp = { 
-      type: null, // ap, sta
-      pktype: pkt.rftype,
-      seq: pkt.seq,
-      mac: pkt.mac, // store as lc alnum, getmac translates?
-      macSm: pkt.macSm, 
-      sensors: [],
-      lastseen: now,
-      firstseen: now,
-      vendor: pkt.vendor, // short, full
-      vendorSm: pkt.vendorSm,
-      ssid: pkt.ssid,
-      rssi: pkt.rssi,
-      channel: pkt.channel,
-      recvchan: pkt.rcvchan,
-      //location: [ { time: new Date(pkt.time), lon: pkt.lon, lat: pkt.lat, rssi: pkt.rssi, sensor: pkt.sensor } ],
-      hosts: [], // clients / ssids
-      packets: [], // beacons / probes
-      totalPackets: 1,
-      totalBytes: pkt.len,
-      tags: ['new'],
-      sessions: new deviceSession(pkt),
-  }
+  var tmp = new wifiDevice(packet)
 
-  if(pkt.hasOwnProperty('sensor'))
-    tmp.sensors = [pkt.sensor]
-  else if(pkt.hasOwnProperty('sensors'))
-    tmp.sensors = pkt.sensors
+  tmp.sessions = new deviceSession(packet)
+  
+  // if being re-loaded vs newly instantiated
+  if(packet.hasOwnProperty('sensors'))
+    tmp.sensors = packet.sensors
+  else
+    tmp.sensors = [packet.sensor]
       
-  if((tmp.channel === 0) || (tmp.channel === undefined))
-    tmp.channel = tmp.recvchan || 0 // ??
+  // shouldn't be needed anymore
+  //if((tmp.channel === 0) || (tmp.channel === undefined))
+  //  tmp.channel = tmp.recvchan || 0 // ??
 
-  if(pkt.rftype[0] === 0) {
-    if(pkt.rftype[1] == 8) {
-      //var booted = tmp.uptime
-      // if(booted)
-      //   tmp.uptime = new Date().getTime() - new Date(booted).getTime()
+  if(packet.rftype[0] === 0) {
+    if(packet.rftype[1] == 8) {
+      var booted = packet.uptime
+       if(booted)
+         tmp.uptime = new Date().getTime() - new Date(booted).getTime()
        
       tmp.type = 'ap'
-      console.info(`+ AP '${tmp.ssid}' from ${pkt.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+      console.info(`+ AP '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
 
-      tmp.enctype = pkt.enctype
-      tmp.cyphertype = pkt.cyphertype
-      tmp.rates = pkt.rates
-      tmp.extrarates = pkt.extrarates
+      tmp.enctype = packet.enctype
+      tmp.cyphertype = packet.cyphertype
+      tmp.rates = packet.rates
+      tmp.extrarates = packet.extrarates
 
-    } else if(pkt.rftype[1] == 4) {
-      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${pkt.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
+    } else if(packet.rftype[1] == 4) {
+      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
       tmp.type = 'sta'
       tmp.hosts.push(tmp.ssid)
     }
-  } else { // if(pkt.rftype[0] == 2) {
-    console.info(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${pkt.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
+  } else { // if(packet.rftype[0] == 2) {
+    console.info(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
     tmp.type = 'sta'
 
     tmp.hosts.push(tmp.ssid)
@@ -211,33 +146,10 @@ function newDevice(pkt) {
   return tmp
 }
 
-function getDuration(ts) {
-  return dfl(ts, {disableUnits: ['s','ms']} )
-}
-
-function getVendor(mac) {
-  const res = oui(mac)
-  
-  if(res !== null) {
-    try {
-      var vendor = res.split('\n')[0]
-      var parts = vendor.split(' ')
-      var vendorSm = parts[0].substr(0,7)
-      
-      if(parts.length > 1)
-        vendorSm += parts[1].substr(0,1).toUpperCase() + parts[1].substr(1,2)
-      return [vendor, vendorSm]
-    } catch (e) {
-      console.error(`OUI: ${e}`.error)
-    }
-  }
-  return ['Unknown', 'None']
-}
-
-function readPacket(msg) {
+function readWifiPacket(msg) {
   const now = new Date()
   try {
-    var p = msg.data
+    var packet = msg.data
     var sensor = msg.sensor
     
     data.location = msg.location
@@ -245,7 +157,7 @@ function readPacket(msg) {
     if(data.sensors.hasOwnProperty(sensor)) {
       data.sensors[sensor].packets += 1
       data.sensors[sensor].lastseen = now
-      data.sensors[sensor].location = { lon: p.lon, lat: p.lat }
+      data.sensors[sensor].location = { lon: packet.lon, lat: packet.lat }
     }
     else {
       data.sensors[sensor] = { lastseen: now,
@@ -253,63 +165,57 @@ function readPacket(msg) {
                                packets: 1 }
     }
     
-    if(p.rftype[0] == 0 && p.rftype[1] == 8 && (!data.devs.ap.includes(p.mac)))
-      data.db[p.mac] = newDevice(p) // ap beacon
+    if(packet.rftype[0] == 0 && packet.rftype[1] == 8 && (!data.devs.ap.includes(packet.mac)))
+      data.db[packet.mac] = newWifiDevice(packet) // ap beacon
 
-    else if(p.rftype[0] == 0 && p.rftype[1] == 4 && (!data.devs.sta.includes(p.mac)))
-      data.db[p.mac] = newDevice(p) // probe request
+    else if(packet.rftype[0] == 0 && packet.rftype[1] == 4 && (!data.devs.sta.includes(packet.mac)))
+      data.db[packet.mac] = newWifiDevice(packet) // probe request
       
-    else if(p.rftype[0] == 2) { // data packet
-      var dst = p.dst
-      var src = p.src
+    else if(packet.rftype[0] == 2) { // data packet
+      var dst = packet.dst
+      var src = packet.src
           
       if(data.devs.ap.includes(src)) {
-        p.mac = dst
-        p.ssid = data.db[src].ssid
+        packet.mac = dst
+        packet.ssid = data.db[src].ssid
         
         if(!data.db[src].hosts.includes(dst)) {
           data.db[src].hosts.push(dst)
               
           if(!data.db.hasOwnProperty(dst))
-            data.db[dst] = newDevice(p)
+            data.db[dst] = newWifiDevice(packet)
         }
       } else
         if (data.devs.ap.includes(dst)) {
-          p.mac = src
-          p.ssid = data.db[dst].ssid
+          packet.mac = src
+          packet.ssid = data.db[dst].ssid
           
           if(!data.db[dst].hosts.includes(src)) {
             data.db[dst].hosts.push(src)
               
             if(!data.db.hasOwnProperty(src))
-              data.db[src] = newDevice(p)
+              data.db[src] = newWifiDevice(packet)
           }
       }
     }
 
-    // sessions_table: { minrssi, maxrssi, sensors, location, enter, exit, duration , uuid/mac}
-    
-    // sessions:
-    // every session_length, find any clients whose firstseen is session length who arent in the session table
-    // err, idk
-
-    if(data.db.hasOwnProperty(p.mac)) {
+    if(data.db.hasOwnProperty(packet.mac)) {
       var output = []
 
       // -> tagDevice
-      if(!data.db[p.mac].tags.includes('loud') && (data.db[p.mac].hosts.length > cfg.server.loud_client_min))
-        data.db[p.mac].tags.push('loud')
-      var duration = (now.getTime() - data.db[p.mac].lastseen.getTime())
+      if(!data.db[packet.mac].tags.includes('loud') && (data.db[packet.mac].hosts.length > cfg.server.loud_client_min))
+        data.db[packet.mac].tags.push('loud')
+      var duration = (now.getTime() - data.db[packet.mac].lastseen.getTime())
       
       // has been seen in (4) minutes, extend session exit
       // second time seen
       if(duration < cfg.server.session_length )
-        data.db[p.mac].sessions.extend(p)
+        data.db[packet.mac].sessions.extend(packet)
       
       // was seen (10) minutes ago, lets see how long he was here
       if(duration > (cfg.server.session_length * 2)) {
-        var enter = data.db[p.mac].sessions.last().enter
-        var exit = data.db[p.mac].sessions.last().exit
+        var enter = data.db[packet.mac].sessions.last().enter
+        var exit = data.db[packet.mac].sessions.last().exit
         
         var dwelled = new Date(exit).getTime() - new Date(enter).getTime()
 
@@ -317,8 +223,8 @@ function readPacket(msg) {
         // however, should simply extend that session, or see how it looks in a chart, could be regular device
 
         if(dwelled > cfg.server.session_length)
-          if(!data.db[p.mac].tags.includes('session'))
-            data.db[p.mac].tags.push('session')
+          if(!data.db[packet.mac].tags.includes('session'))
+            data.db[packet.mac].tags.push('session')
          
         //if(now.getTime() - exit < (cfg.server.session_length * 4)
         // don't really start a new session
@@ -326,75 +232,82 @@ function readPacket(msg) {
         // regular 
         //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${dfl(dwelled)}`)
 
-        data.db[p.mac].sessions.add(p)
+        data.db[packet.mac].sessions.add(packet)
         
-        if(data.devs.ap.includes(p.mac))
-          output.push(`> AP '${data.db[p.mac].ssid}'`)
+        if(data.devs.ap.includes(packet.mac))
+          output.push(`> AP '${data.db[packet.mac].ssid}'`)
         else {
-          output.push(`> STA '${data.db[p.mac].macSm}'`)
-            if(p.rftype[1] == 4)
+          output.push(`> STA '${data.db[packet.mac].macSm}'`)
+            if(packet.rftype[1] == 4)
               output.push('probed')
-            else if(p.rftype[0] == 2)
+            else if(packet.rftype[0] == 2)
               output.push('on')
             else
-              output.push(`${p.rftype[0]}:${p.rftype[1]}`)
+              output.push(`${packet.rftype[0]}:${packet.rftype[1]}`)
           
-            output.push(`'${p.ssid}'`)
+            output.push(`'${packet.ssid}'`)
         }
         
-        output.push(`from ${p.sensor} type ${data.db[p.mac].vendorSm}`)
-        output.push(`gone ${getDuration(duration)} rssi ${p.rssi}`)
+        output.push(`from ${packet.sensor} type ${data.db[packet.mac].vendorSm}`)
+        output.push(`gone ${getDuration(duration)} rssi ${packet.rssi}`)
         
-        if(data.devs.ap.includes(p.mac))
-          output.push(`seq ${p.seq}`)
+        if(data.devs.ap.includes(packet.mac))
+          output.push(`seq ${packet.seq}`)
         /*{
-          var booted = new Date(p.uptime)
+          var booted = new Date(packet.uptime)
           var uptime = now.getTime() - booted.getTime()
           output.push(`Up ${getDuration(uptime)}`)
         }
         else*/ 
 
         // seen before, tag repeat/session
-        if(!data.db[p.mac].tags.includes['repeat'])
-          data.db[p.mac].tags.push('repeat')
+        if(!data.db[packet.mac].tags.includes['repeat'])
+          data.db[packet.mac].tags.push('repeat')
 
         console.info(output.join(' '))
       }
 
       // no longer a new device
-      if(data.db[p.mac].tags.includes('new') && now - data.db[p.mac].firstseen < ( 10 * 60 * 1000))
-        data.db[p.mac].tags.splice(data.db[p.mac].tags.indexOf('new'),1)
+      if(data.db[packet.mac].tags.includes('new') && now - data.db[packet.mac].firstseen < ( 10 * 60 * 1000))
+        data.db[packet.mac].tags.splice(data.db[packet.mac].tags.indexOf('new'),1)
 
-      data.db[p.mac].location = { lon: p.lon, lat: p.lat }
-      data.db[p.mac].lastseen = new Date(p.time)
-      data.db[p.mac].rssi = p.rssi
-      data.db[p.mac].seq = p.seq
+      data.db[packet.mac].location = { lon: packet.lon, lat: packet.lat }
+      data.db[packet.mac].lastseen = new Date(packet.time)
+      data.db[packet.mac].rssi = packet.rssi
+      data.db[packet.mac].seq = packet.seq
 
-      data.db[p.mac].totalPackets += 1
-      data.db[p.mac].totalBytes += p.len
+      data.db[packet.mac].totalPackets += 1
+      data.db[packet.mac].totalBytes += packet.len
       
-      if(data.db[p.mac].type == 'sta' && (!data.db[p.mac].hosts.includes(p.ssid)))
-        data.db[p.mac].hosts.push(p.ssid)
-        //if(data.devs.includes(p.ssid) && 
+      if(data.db[packet.mac].type == 'sta' && (!data.db[packet.mac].hosts.includes(packet.ssid)))
+        data.db[packet.mac].hosts.push(packet.ssid)
+        //if(data.devs.includes(packet.ssid) && 
  
-      try{if(!data.db[p.mac].sensors.includes(p.sensor))
-        data.db[p.mac].sensors.push(p.sensor)}catch(e) {console.error('sensors...');console.log(data.db[p.mac])}
+      try{if(!data.db[packet.mac].sensors.includes(packet.sensor))
+        data.db[packet.mac].sensors.push(packet.sensor)}catch(e) {console.error('sensors...');console.log(data.db[packet.mac])}
 
       data.stats.packets += 1
+    } else {
+      console.log('Is this necessary?')
     }
 
-  if(now - data.lastSynced > program.syncInterval) {
-    //console.debug('Saving data.')
-    store.sync(data.db, (err, docs) => { if(err) throw err})
-    data.lastSynced = now
-  }
-  
   } catch (e) {
     console.error(`Decode Packet: ${e}`)
     data.stats.errors += 1
   }
 
+  checkSync()
 }
+  
+function checkSync() {
+  const now = new Date()
+  
+  if(now - data.lastSynced > program.syncInterval) {
+    store.sync(data.db, (err, docs) => { if(err) throw err})
+    data.lastSynced = now
+  }
+}
+  
 
 function latest(since) {
   var out = {}
@@ -425,6 +338,7 @@ wss.on('connection', (ws, req) => {
   if(!data.clients.hasOwnProperty(id))
     data.clients[id] = { mode: null, host: ip, port: port,
                     firstseen: new Date(), lastseen: new Date() }
+                    
 
   console.info(`Connection from ${id}}`)
   
@@ -443,7 +357,7 @@ wss.on('connection', (ws, req) => {
     
     if(msg.hasOwnProperty('type')) {
       if(msg.type == 'data') {
-        readPacket(msg)
+        readWifiPacket(msg)
       } else
       if(msg.type == 'log') {
         //read_log(msg)
@@ -476,11 +390,34 @@ wss.on('connection', (ws, req) => {
       if (msg.cmd == 'status') {
         updateStats()
         ws.send(JSON.stringify({ type: 'status', time: new Date(),
-                                 data: { sensors: data.sensors, stats: data.stats, info: data.info } }))
+                                 data: { sensors: data.sensors, stats: data.stats, info: data.info, location: data.location } }))
+      } else
+      if (msg.cmd == 'sensors') {
+        updateStats()
+        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: { sensors: data.sensors } } ))
+
       } else
       if (msg.cmd == 'dump') {
         updateStats()
-        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: data}))
+        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: { db: data.db, sensors: data.sensors,
+                                                                         stats: data.stats, info: data.info, location: data.location  } }))
+      } else
+      if (msg.cmd == 'find') {
+        if(!msg.hasOwnProperty('query') || !msg.hasOwnProperty('what')) {
+          console.error(`Bad find command from ${id}`)
+        }
+        
+        var type = msg.what
+        var query = msg.query
+
+        sendResults = (err, res) => {
+          if(err === null)
+            ws.send(JSON.stringify({ type: 'search', time: new Date(), data: res }))
+          else
+            console.error(`Search: ${err}`)
+        }
+        
+        store.find(type, query, sendResults)
       } else
       if (msg.cmd == 'subscribe') {
         console.info(`New Subscriber: ${id}`)
@@ -529,5 +466,8 @@ wss.on('connection', (ws, req) => {
     } else {
       console.error(`Invalid packet: ${message}`)
     }
+
+    checkSync()
+
   })
 })
