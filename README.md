@@ -1,4 +1,4 @@
-# node signal monitor v 0.0.17
+# node signal monitor v 0.0.18
 
 Simple inspection of WiFi networks.
 
@@ -12,7 +12,7 @@ wifi sta -> probe  \    wifi
 wifi ap -> beacon  /    pcap      |
                                 smwss
                                   |
-                       MongoDB -- | -- NeDB
+                     ?MongoDB? -- | -- NeDB
 node-red leaflet map           -- |
 ```
 
@@ -21,6 +21,11 @@ node-red leaflet map           -- |
 # usage
 
 Incomplete code, beware. *Note*: Web UI currently broken.
+
+Documentation will soon be moved to the [wiki](wiki/)
+
+__While the web socket server only needs write access for the database,  
+the sensor program either requires root access or some sort of suid-ness.__
 
 
 configure: `npm install`
@@ -47,7 +52,8 @@ configure wireless interface, setting it to [monitor mode](https://wiki.wireshar
 
 
 install pcap:  
-node_pcap requires libpcap-dev for pcap.h, and the LTS version of nodejs - 10.16.3.  
+node_pcap requires libpcap-dev for pcap.h, and the last LTS version of nodejs - 10.16.3.  
+There is experimental support for using pcap on the current LTS of 12.0.0 coming soon.
 Using `n` is recommended to manage multiple installed versions of npm.  
 
 ```text
@@ -67,8 +73,10 @@ start the sensor:
 pm2 start bin/smwifi
 ```
 
-after the flow is deployed, the map will be available at your node-red URL with the endpoint */map*.  
+after the flow is deployed, the map will be available at your node-red URL with the endpoint */worldmap*.  
 
+
+to save the daemons to be restarted when the machine boots, issue ```pm2 save```
 
 # node red map
 
@@ -85,12 +93,10 @@ _its just a phase._
 
 TODO:
 - [ ] Learn to code
-- [x] Simple console UI
-- [x] Enable listening on multiple interfaces
-- [ ] File logging - pm2 keeps logs, but need to finish custom logger.js
-- [ ] Add NeDB as buffer to MongoDB
-- [x] Handle bad GPS packets
-- [ ] Standalone web server for leaflet map..
+- [ ] Fix CLI crashing due to some display issue
+- [ ] Revamp Web UI and add datatable
+- [ ] Standalone web server for data display ..
+- [ ] Move all/most wifi/websocket related functions to lib/
 
 This is a continuation of the fascination begun with [sigmon](https://github.com/terbo/sigmon).
 
