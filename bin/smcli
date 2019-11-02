@@ -44,6 +44,8 @@ require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
 program.option('-s, --server <server>', 'sigmon server to connect to',cfg.sensor.ws.hostname)
 program.option('-p, --port <port>', 'port to connect to',cfg.sensor.ws.port)
+program.option('-S, --no-sound', 'disable color',cfg.console.sound)
+program.option('-a, --alert <mac/ssid>', 'display alerts for entities',cfg.sensor.alert)
 
 program.parse(process.argv)
 
@@ -166,7 +168,7 @@ function sortVendor(a,b) {
 
 
 function playwav(wav) {
-  if(cfg.console.sound) {
+  if(program.sound) {
     //status1.log(`Playing '${wav}.wav'`)
     player.play({path: `./data/wav/${wav}.wav`}).then(() => {
       }).catch((error) => { status1.log(`Error playing sound: ${error}`) })
@@ -190,7 +192,7 @@ function update() {
         firstseen = new Date(dev.firstseen).getTime()
     dev.tags = []
 
-    if(cfg.sensor.alert.includes(mac)) { // that wascally wabbit...
+    if(program.alert.includes(mac)) { // that wascally wabbit...
       playwav('alert')
       status1.log(`${mac} seen @ ${now}`)
       dev.tags.push('alert')
@@ -416,8 +418,8 @@ screen.key(['escape', 'q', 'C-c'], do_exit)
 screen.key('C-d', () => { ws.send(JSON.stringify({'cmd': 'dump'})) })
 
 screen.key('C-s', () => {
-  cfg.console.sound = !cfg.console.sound
-  status1.log('Sound ' + (cfg.console.sound ? 'enabled' : 'disabled'))
+  program.sound = !program.sound
+  status1.log('Sound ' + (program.sound ? 'enabled' : 'disabled'))
 })
 
 screen.key(['s'], (ch, key) => {
