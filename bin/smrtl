@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+'use strict'
+
+require('console-stamp')(console, { pattern: 'HH:MM:ss' });
+
+var path = require('path'),
+     cfg = require('../etc/config')
+
+module.paths.unshift(path.join(cfg.baseDir, 'lib'))
+
+const fs       = require('fs'),
+      os       = require('os'),
+      pcap     = require('pcap'),
+      RWS      = require('reconnecting-websocket'),
+      WS       = require('ws'),
+      program  = require('commander'),
+      process  = require('process'),
+      spawn    = require('child_process').spawn,
+      hostname = os.hostname(),
+       shuffle = require('sigmon.tils').shuffle,
+       Tail    = require('tail').Tail,
+      cleanup  = require('cleanup').Cleanup
+
+var gps = require('gps.client'),
+    statusTimer = null,
+    args = null,
+    ws = null,
+    datafile = '',
+    tail = '',
+    rtlsdr  = null,
+
+    data = {
+      location: { lon: 0, lat: 0, sats: 0 },
+      
+      stats: { errors: 0, packets: 0, output: [], runtime: 0, cpu: 0, memory: 0 },
+      
+      info: { currfreq: '0Mhz', start_time: new Date(), binary: cfg.rtlsdr.binary,
+              lasterr: null, hostname: os.hostname(),
+              versions: process.versions, user: os.userInfo(),
+              pid: process.pid, version: cfg.version, uptime: 0,
+              debug: cfg.rtlsdr.debug },
+      
+      config: { sensor: cfg.sensor, rtlsdr: cfg.rtlsdr },
+    }
+
+let errors = 0
+
+program.name('sigmon.rtlsdr.sensor')
+       .version(cfg.version)
+       .description('sigmon rtl_433 sensor')
+       .option('-d, --device <index>', 'interface to use', cfg.interface)
+       .option('-f, --frequencies <freq>','specify frequency to monitor, can be used multiple times',cfg.rtlsdr.frequencies)
+       // we're going to just read from the JSON file, stdout is unreliable with multiple -F outputs
+       //.option('-S, --save','also save detected devices to JSON', cfg.rtlsdr.save_json)
+       .option('-r, --protocol <proto>', 'specify decoding protocols, can be used multiple times')
+       .option('-H, --hop <seconds>', 'set channel hop time', cfg.rtlsdr.hop_interval)
+       .option('-v, --verbose', 'verbose output', cfg.rtlsdr.verbose)
+       .option('-n, --alias <sensor>', 'name/alias of this sensor', hostname)
+       .option('-s, --hostname <hostname>', 'websocket hostname', cfg.ws.hostname)
+       .option('-p, --port <port>', 'websocket port', cfg.ws.port)
+       .option('--gps <gps_server>', 'gpsd server', cfg.gps.hostname)
+       .option('--location <lat,lon>', 'use fixed location', `${cfg.gps.latitude},${cfg.gps.longitude}`)
+       .option('--remote', 'enable remote control of this host *CAUTION*', cfg.rtlsdr.enable_remote)
+       .option('-R, --disable-reconnect', 'disable reconnecting', !cfg.sensor.reconnect)
+       .option('-D, --debug', 'enable debugging output', false)
+
+program.parse(process.argv)
+
+program.location = program.location.split(',')
+
+cfg.gps.longitude = program.location[0]
+cfg.gps.latitude = program.location[1]
+
+data.info.debug = program.debug
+data.info.device = program.device
+
+data.info.hopping = program.hop
+// this will break if one frequency is specified.
+// also need to specifiy currfreq then
+data.info.freqs = program.frequencies
+data.info.gps = cfg.gps.enabled
+data.info.remote = program.remote
+
+console.info(`${program.name()} v${program.version()} starting`)
+
+function packet_cb(buf, frequency) {
+  try {
+    buf.frequency = frequency
+    buf.sensor = program.alias
+
+    const msg = JSON.stringify({type: 'data', source: 'sdr', frequency: frequency, device: program.device, sensor: program.alias, location: gps.location, data: buf})
+    
+    if(program.verbose)
+      console.info(msg)
+    
+    ws.send(msg)
+    data.location = gps.location
+    data.stats.packets += 1
+
+    if(!statusTimer)
+      statusTimer = setInterval(sendStatus, cfg.sensor.status_interval)
+  } catch (e) {
+    return lastErr('Read Packet',e)
+  }
+}
+
+function updateStats() {
+  const now = new Date()
+
+  data.location = gps.location
+  
+  data.stats.cpu = process.cpuUsage()
+  data.stats.memory = process.memoryUsage()
+  
+  data.stats.runtime = now - data.info.start_time 
+  data.info.uptime = os.uptime()
+  
+  data.info.debug = program.debug
+  
+  if(data.config.sensor != cfg.sensor)
+    data.config.sensor = cfg.sensor
+  
+  if(data.config.rtlsdr != cfg.rtlsdr)
+    data.config.rtlsdr = cfg.rtlsdr
+}
+
+function lastErr(act, e, output=true) {
+  data.stats.errors += 1
+  data.info.last_err = `${new Date()}  ${act}: ${e}`
+
+  if(output)
+    if(typeof e === 'string')
+      console.error(`${act}: ${e}`)
+    else if(typeof e === 'object')
+      console.error(`${act}: ${e.error}`)
+}
+
+function newline(data) {
+  try {
+    var line = JSON.parse(data)
+    packet_cb(line, data.info.currfreq)
+  } catch (e) {
+    lastErr('Reading input file',e)
+  }
+}
+
+function start() {
+  datafile = path.join(cfg.baseDir, 'data', `rtl_433_${program.device}.json`)
+
+  args = ['-F',`json:${datafile}`]
+  
+  if(program.verbose)
+    console.log(`Saving JSON output to ${datafile}`)
+  
+  if(program.hop)
+    args.push('-H',program.hop)
+
+  if(program.frequencies) {
+    var freqs = []
+
+    if(program.frequencies.search(','))
+      freqs = shuffle(program.frequencies.split(','))
+    else
+      freqs = [program.frequencies] 
+    
+    freqs.forEach(freq => {
+      args.push('-f',freq)
+    })
+  }
+
+  console.info(`Scanning frequencies: ${freqs.toString()}`)
+
+  if(cfg.rtlsdr.extra_args.length)
+    args.push(cfg.rtlsdr.extra_args.split(' '))
+
+  if(program.verbose)
+    console.debug(`Spawn: "${cfg.rtlsdr.binary} ${args.join(' ')}"`)
+
+  rtlsdr = spawn(cfg.rtlsdr.binary, args)
+  
+  data.stats.pid = rtlsdr.pid
+  data.stats.args = rtlsdr.args
+  data.info.binary = cfg.rtlsdr.binary
+
+
+  rtlsdr.stderr.on('data', (buf) => {
+    var output = buf.toString().trimEnd()
+
+    if(output.startsWith('Tuned to ')) {
+      data.info.currfreq = output.split(' ')[2].trimEnd().slice(0,-1)
+      
+      if(program.verbose)
+        console.log('Scanning: ' + data.info.currfreq)
+    }
+    else
+      output.split('\n').forEach(line => {
+        if(line.trim().length) {
+          data.stats.output.push(line)
+          
+          if(program.verbose)
+            console.info(`rtl_433 output: ${line}`)
+        }
+      })
+  })
+
+  rtlsdr.stdout.on('data', (buf) => {
+    data.stats.output.push(buf)
+    
+    if(program.verbose)
+      console.log('STDOUT: ', buf)
+    /*var output = buf.toString().trimEnd()
+
+    try {
+      if(output[0] == '{' && output[output.length - 1] == '}')
+        packet_cb(JSON.parse(output), data.info.currfreq)
+      else if(output[0] == '{')
+        bline = output
+      else if(output[output.length - 1] == '}') {
+        bline += output
+        packet_cb(JSON.parse(bline), data.info.currfreq)
+      }
+    } catch (e) {
+      lastErr('Parsing Output',e)
+    }*/
+  })
+
+  rtlsdr.on('close', checkexit)
+  rtlsdr.on('exit',  checkexit)
+
+  ws = new RWS(`ws://${program.hostname}:${program.port}/ws`, [], { WebSocket: WS, debug: cfg.ws.debug } )
+
+  ws.addEventListener('open', () => {
+    console.info('Connected to websocket ' + program.hostname)
+    
+    if(!cfg.gps.enabled) {
+      console.info(`Using fixed GPS location: ${cfg.gps.longitude}, ${cfg.gps.latitude}`)
+      gps = { location: { lat: cfg.gps.latitude, lon: cfg.gps.longitude, sats: 0 } }
+    }
+  })
+
+  ws.addEventListener('message', message => {
+    // type: [ debug | restart | exit | channel | status | log | stream | stopstream | osrestart | osreboot | terminal ]
+    try {
+      var msg = JSON.parse(message)
+      console.debug(`Message: ${message}`)
+
+      if(msg.hasOwnProperty('type'))
+        if(msg.type == 'debug')
+          program.debug = !program.debug
+        else
+        if(msg.type == 'status')
+          sendStatus()
+        else
+        if(msg.type == 'stream' && msg.hasOwnProperty(arg) && msg.hasownProperty(where))
+          if(['log','error'].includes(arg))
+            streams.push(arg)
+        else
+        if(msg.type == 'stopstream' && msg.hasOwnProperty(arg) && streams.include(msg.type))
+          streams.splice(stream.indexOf(msg.type,1))
+        else
+        if(cfg.sensor.remote.includes(msg.type)) {
+          if(msg.type == 'restart') {
+            // spawn myself? pm2 restart .. ?
+            cleanExit('restart')
+          }
+          else
+          if(msg.type == 'exit')
+            cleanExit('requested')
+          else
+          if(msg.type == 'osshutdown' || msg.type == 'osreboot') {
+            require('child_process').spawn(msg.type.slice(2))
+            cleanExit(msg.type)
+          } else
+          if(msg.type == 'terminal') {
+            console.info('@root:/# ')
+          // launch an xterm.js process and send back the port
+          }
+        }
+        else
+          lastErr('Unparsed message type', msg.type)
+      } catch (e) {
+          lastErr('Parsing message',e)
+    }
+  })
+
+  tail = new Tail(datafile)
+  process.on('beforeExit', cleanExit)
+}
+
+function checkexit(code) {
+  if(code != 0) {
+    console.error(`rtl_433 exit code: ${code} })`)
+  }
+  
+  cleanExit(code)
+}
+
+function sendStatus() {
+  updateStats()
+  ws.send(JSON.stringify({type: 'status', sensor: program.alias, data: data}))
+}
+
+function cleanExit(exitCode) {
+  var output = [`exiting: rtl_433 exit code ${exitCode}`]
+  
+  try { process.kill(data.stats.pid,'SIGKILL') } catch (e) {}
+  
+  if(data.stats.errors) {
+    output.push(`with #errors: #{data.stats.errors}`)
+    output.push(`last error: ${data.info.lastErr}`)
+  }
+  
+  console.log(output.join(' '))
+
+  ws.send(JSON.stringify({type: 'status', sensor: program.alias, data: data }))
+  ws.send(JSON.stringify({type: 'log', sensor: program.alias, data: output.join(' ')}))
+
+  process.exit(0)
+}
+
+if (require.main === module)
+  start()
+
+cleanup(cleanExit)

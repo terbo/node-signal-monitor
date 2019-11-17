@@ -1,97 +1,237 @@
-const config = {
-    version: '0.0.18',
+/*
+  all configuraturable options for each program and module.
+  this will be seperated into json and yaml files soon.
+
+  current top level objects:
+
+  baseDir - the full root directory location of the sigmon files, configs and data.
+            until I figure out how to reliably find this, or define options for
+            placing assets in user configurable locations.
+
+  devices - populated by devices.yaml
+            
+            this object holds lists of various devices to monitor.
+            these lists accept wifi/bt mac addresses, ssids, and 24 bit sensor mac "ids"
+            and perhaps regex in the future.
+
+  device  - notably confusing, this object holds default options for handling devices.
+            sync time, session length, rssi limits, and also database prune selectors
+
+  db      - options for the file database, and soon the mongo server
+
+  ws      - options for the websocket server.
+  
+  server  - configures the web socket server and message coordinator.
+
+  sensor  - options that all sensors use
+
+  gps     - configure either a gps server or define a static location.
+            can be updated by each sensor via the command line.
+  
+  wifi    - options for the wifi sensor and interface channel hopping.
+            future: optional pcap file saving, and packet filter 
+  
+  rtlsdr  - options for the rtl_433 SDR sensor
+
+  console - defaults for the TUI, currently sound and soon speech
+
+  oui     - options for location and automatic updating of oui registry, which is recommended
+
+  logging - unused, future options for file logging
+
+note: all times are in milliseconds unless noted
+*/
+
+
+const
+  yaml = require('js-yaml'),
+  path = require('path'),
+  fs   = require('fs')
+  
+  config = {
+    version: '0.0.19a',
     
-    baseDir :'./',                      /* Change this */
+    baseDir: '/root/sigmon',           /* Change this */
     
-    db: {                               /*  Currently syncs database via NeDB, a javascript clone of mongodb */
+    device: {
+      new_timeout: 120000,              /*  Devices are no longer 'new' after 2 minutes of being seen   */
+
+      far_rssi: -65,                    /*  Maximum RSSI to determine if device is 'far away'           */
+      close_rssi: -49,
+      
+      max_sessions: 10,                 /*  Maximum number sessions to save                             */
+      max_locations: 15,                /*  *WIP* Maximum number of unique locations to save            */
+      session_length: 260000,           /*  How many microseconds after a device is noticed do we wait  */
+                                        /*  to begin a session? 4 minutes is the default.               */
+      
+      loud_device_min:  5,              /*  How many clients or ssids probed for is considered 'loud'?  */
+      
+      prune: false,                     /*  Remove devices from db based on below criteria              */
+      expire_after: 604800,             /*  Remove devices aged this many *seconds* (1 week) */
+      
+      prune_unfamiliar: false,          /*  Only saves devices specified in a cfg.devices list          */
+      prune_unknowns: false,            /*  Remove clients seen seldomly with unknown mac addresses     */
+      prune_clients: false,              /*  Don't save wifi clients                                     */
+      prune_aps: false,                 /*  Don't save Access Points                                    */
+    },
+    
+    db: {                               /*  Sync database via NeDB, a JSON file based clone of mongodb  */
       enabled: true,
-      autoload: true,
-      file: 'sigmon.db',
-      hostname: '127.0.0.1',
+      file: 'sigmon.db',                /*  Moved to data/ directory                                    */
+      sync_interval: 50000,             /*  Save every 50 seconds                                       */
+      compact_interval: 40000,          /*  Uniqify db file every sync_interval - 10 seconds by default */
+      server: '10.0.0.1:27017',         /*  WIP */
+      hostname: '10.0.0.1',
       port: 27017,
-      retain: 604800,                   /*  will eventually remove unremarkable devices after x        */
-      sync_interval: 50000,
     },
         
+    ws: {                               /*  options for websockets                                      */
+      port: 9991,                   
+      hostname: '10.0.0.1',
+      subscribe_interval: 5000,         /*  How often do we publish results to subscribers?              */
+      subscribe_logs: 500,              /*  How often do we publish results to subscribers?              */
+      debug: false,
+    },
+
     server: {
-        max_devices: 0,                 /*  *WIP* Maximum number of devices to remember.                */
-        device_prune: false,            /*   If above is enabled, how often do we prune older devices?  */
-        max_sessions: 10,               /*  Maximum sessions to save                                    */
-        session_length: 260000,         /*   *TODO* How many microseconds after a device is noticed     */
-                                        /*   do we wait to begin a session? 4 minutes is the default.   */
-        
-        loud_device_min:  5,            /*  How many clients or ssids probed for is considered 'loud'?  */
-        enable_http: false,             /*  *WIP* Enable web server for UI? */
-        enable_websocket: true,         /*   Service connection to sensors and web clients/etc. */
+      enable_http: false,               /*  *WIP* Enable web server for UI?                             */
+      enable_websocket: true,           /*  Service connection to sensors and web clients/etc.          */
 
-        use_ssl: false,                 /*  *WIP* Perhaps we'll use SSL, and authenticate clients, etc. */
-
-        log: {                          /*  *WIP* PM2 handles logs, this is for our own logging module  */
-          level: 'info',                
-          file: 'logs/wss.log',
-          max_size: 10000000,
-          max_files: 1,
-        },
-        
-        ws: {
-          port: 8989,                   
-          hostname: '127.0.0.1',        /* *WIP*                                                        */
-          subscribe_interval: 5000,     /*  How often do we publish results to subscribers?             */
-        },
+      use_ssl: false,                   /*  *WIP* Perhaps we'll use SSL, and authenticate clients, etc. */
+      verbose: false,
+      debug: true,
     },
     
     sensor: {
-        interface: 'mon0',              /*   Over-ride with -i on command line                          */
-        reconnect: true,                /*   Default is to reconnect indefinitally                      */
-        
-        use_airmon_ng: false,           /*   Enable monitor mode using airmon-ng                        */
-
-        pcap: {                         /*  *WIP*                                                       */
-          save: true,                   /*   Save packets every X seconds                               */
-          filter: '',                   /*   pcap filter to apply to packets                            */
-          interval: 5000,               /*   to file dir/sensor.iface.time_micro.pcap                   */
-          dir: 'data/pcap',
-        },
-
-        gps: {                          /*   If one sensor manages multiple interfaces, how would we    */
-          enabled: false,               /*   distinguish their location/orientation, e.g. having two    */
-          auto_connect: true,           /*   directional antennas for gleaning better location info?    */
-          hostname: '127.0.0.1',        /*   if they return their heading name them sensor-orientation  */
-          port: 2947,
-          latitude: 0,
-          longitude: 0
-        },
-        
-        ws: {
-          hostname: '127.0.0.1',
-          port: 8989,
-        },
-
-        hopper: {                       /*  spawn/exec based channel hopper for devices with 'iwconfig' */
-          enabled: true,
-          channel: 1,                   /*  Fixed channel used when not hopping */
-          channels: 11,                 /*  1-11 in the US, 1-13 other places. Other freqs coming soon  */
-          dwell: 300,                   /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
-                                        /*  some machines get bogged down                               */
-        },
-
-        ignore: [ ],
-        alert: [ ],
-        track: [ ],                     /* *WIP* to track a specific device/etc                         */
+      status_interval: 60000,           /*  sends status every minute.                                  */
+      log_interval: 300,                /*  sends logs constantly                                       */
+      reconnect: true,                  /*  Default is to reconnect indefinitally                       */
+      reconnect_timeout: 4000,
+                                        /*                    CAUTION                                   */ 
+      remote: ['channel','restart','exit','osreboot','osshutdown','terminal'],
+                                        /*  This enables specific remote control of the sensors host    */
+      debug: true,
+      
     },
-    
+      
+    gps: {                              /*  If one sensor manages multiple interfaces, how would we     */
+      enabled: false,                   /*  distinguish their location/orientation, e.g. having two     */
+      auto_connect: false,              /*  directional antennas for gleaning better location info?     */
+      hostname: '10.0.0.1',             /*  if they return their heading name them sensor-orientation   */
+      port: 2947,
+      reconnect_delay: 3000,
+      latitude: 35.339142,              /*  Set static location                                         */
+      longitude: -118.990268,
+      events: 'tpv,sky',                /*  Only watch for location and sattelite gps packets           */
+    },
+      
+    wifi: {
+      interface: 'wlan1',                /*  Over-ride with -i on command line                           */
+
+      use_airmon_ng: false,             /*  *WIP* Enable monitor mode using airmon-ng                   */
+      
+      //band: '2.4G',                     /*  2.4G or 5G                                                  */
+      //regdomain: 'US',                  /*  CRDA regulatory domain for determining useable channels     */
+
+      pcap: {                           /*  *WIP*                                                       */
+        save: false,                     /*  Save packets every X seconds                               */
+        filter: '',                     /*  PCAP filter to apply to packets                             */
+        interval: 5000,                 /*  to file dir/sensor.iface.time_micro.pcap                    */
+        outputDir: 'pcap',
+      },
+
+      hopper: {                         /*  spawn/exec based channel hopper for devices with 'iwconfig' */
+        enabled: true,
+        channel: 1,                     /*  Fixed channel used when not hopping */
+        dwell: 300,                     /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
+                                        /*  some machines get bogged down, like raspberry pis           */
+        binary: '/sbin/iw',       /*  Command to run to change channels                           */
+      },
+    },
+
+    rtlsdr: {
+      frequencies: '433.92Mhz,315.000Mhz,300.000Mhz,310.000Mhz,318.000Mhz,390.000Mhz',
+                                        /*  Comma seperated list of frequencies to monitor.             */
+                                        /*  Accepts long ints - 4139200000 (Hz) or 433.92Mhz            */
+      binary: '/usr/local/bin/rtl_433',
+      hop_interval: 5,                  /*  Hop frequencies every second                                */
+      save_json: true,                  /*  Also save JSON output from rtl_433                          */
+      verbose: false,
+      extra_args: '',                   /*  Extra arguments for rtl_433, string, space seperated        */
+      debug: true,
+    },
+   
     console: {                          /*  Maybe some settings for the blessed/ncurses UI              */
-      device_timeout: 120000,
-      sound: false,                     /*  Use some kismet sounds?                                     */
-      far_rssi: -65,
-      close_rssi: -49,
+      sound: true,                     /*  Use some kismet/netstumbler sound feedback?                 */
+      speech: false,                    /*  *WIP* Speech output of specified stats                      */
+      speech_binary: '/usr/bin/espeak', /*  TTS binary                                                  */
+      debug: true,
+
+      sensor_colors: ['yellow','cyan','red','white','blue','green','magenta'], // random colors for sensors
+      layouts: {
+        'large': {
+            scr:  {r: 10, c: 11},
+            status1:  {h: 0, w: 0, x: 1, y: 6},
+            status2:  {h: 0, w: 5, x: 1, y: 8},
+            devTable:  {h: 1, w: 0, x: 6, y: 10},
+            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
+            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
+            pktGraph:  {h: 6, w: 0, x: 4, y: 11},
+            logger:  {h: 3, w: 8, x: 7, y: 0},
+            info: {h: 10, w: 3, x: 0, y: 8},
+            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 6, 24],
+            devTb: {w: '60%', h: '50%'},
+            sBox: {w: '50%', h: 'shrink'},
+            sRes: {w: '50%', h: 'shrink'},
+          },
+
+        'medium': {
+            scr:  {r: 10, c: 11},
+            status1:  {h: 0, w: 0, x: 1, y: 6},
+            status2:  {h: 0, w: 5, x: 1, y: 8},
+            devTable:  {h: 1, w: 0, x: 8, y: 10},
+            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
+            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
+            pktGraph:  {h: 6, w: 0, x: 4, y: 11},
+            logger:  {h: 1, w: 8, x: 9, y: 0},
+            info: {h: 10, w: 3, x: 0, y: 8},
+            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 6, 24],
+            devTb: {w: '60%', h: '50%'},
+            sBox: {w: '50%', h: 'shrink'},
+            sRes: {w: '50%', h: 'shrink'},
+          },
+
+        'small': {
+            scr:  {r: 10, c: 11},
+            status1:  {h: 0, w: 0, x: 1, y: 6},
+            status2:  {h: 0, w: 5, x: 1, y: 8},
+            devTable:  {h: 1, w: 0, x: 8, y: 10},
+            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
+            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
+            pktGraph:  {h: 6, w: 0, x: 4, y: 11},
+            logger:  {h: 1, w: 8, x: 9, y: 0},
+            info: {h: 10, w: 3, x: 0, y: 8},
+            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 6, 24],
+            devTb: {w: '60%', h: '50%'},
+            sBox: {w: '50%', h: 'shrink'},
+            sRes: {w: '50%', h: 'shrink'},
+          }
+      }
     },
 
-    oui: {                              /*  Keep the OUI registry updated                               */
-      update: true,
-      interval: 7,                     /*  Every week */
-      file: 'data/oui.json',
-    }
+    oui: {                              
+      update: true,                     /*  *WIP* Automatically update the IEEE OUI device registry     */
+      interval: 7,                      /*  This database is frequently updated, default checks weekly  */
+      file: 'oui.json',
+    },
+      
+    logger: {                              /*  *WIP* PM2 handles logs, this is for our own logging module  */
+      file: 'logs/wss.log',
+      max_size: 10000000,
+      max_files: 1,
+    },
 }
+
+config.devices = yaml.load(fs.readFileSync(path.join(config.baseDir, 'etc', 'devices.yaml')))
 
 module.exports = config

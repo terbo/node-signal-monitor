@@ -1,90 +1,131 @@
 #!/usr/bin/env node
-"use strict"
+'use strict'
+
+require('console-stamp')(console, { pattern: 'HH:MM:ss' })
 
 var cfg  = require('../etc/config')
-module.paths.unshift(cfg.baseDir+'lib')
 
 const fs       = require('fs'),
       os       = require('os'),
       WS       = require('ws'),
+      path     = require('path'),
+      decycle = require('json-cyclic').decycle,
       process  = require('process'),
       program  = require('commander')
 
+module.paths.unshift(path.join(cfg.baseDir, 'lib'))
 
-const smutils       = require('smutils'),
-      store = require('db-nedb'),
-			getVendor     = smutils.getVendor,
-			getDuration   = smutils.getDuration,
-      wifiDevice    = require('wifiDevice').wifiDevice,
-      deviceSession = require('deviceSession').deviceSession
-
-require('console-stamp')(console, { pattern: 'HH:MM:ss' })
+const utils         = require('sigmon.utils'),
+      store         = require('db.nedb'),
+      getVendor     = utils.getVendor,
+      getDuration   = utils.getDuration,
+      Sensor        = require('device.sensor').Sensor,
+      wifiDevice    = require('device.wifiv2').wifiDevice,
+      rtlDevice     = require('device.sdr').rtlDevice,
+      deviceSession = require('device.session').deviceSession,
+      cleanup  = utils.Cleanup
 
 program.name('sigmon websocket server')
        .version(cfg.version)
        .description('sigmon websocket server')
-
-program.option('-p,--port <port>','port to listen on',cfg.server.ws.port)
-       .option('-l,--host <ip>','ip to bind to',cfg.server.ws.hostname)
-       .option('-i,--sync-interval <millisecs>','seconds between syncing data ',cfg.db.sync_interval)
-       .option('-d,--dbfile <file>','json database file to use', `${cfg.baseDir}${cfg.db.file}`)
+       .option('-p, --port <port>','port to listen on',cfg.ws.port)
+       .option('-l, --host <ip>','ip to bind to',cfg.ws.hostname)
+       .option('-v, --verbose', 'verbose output', cfg.server.verbose)
+       .option('-i, --sync-interval <millisecs>','time between db syncs',cfg.db.sync_interval)
+       .option('-c, --compact-interval <millisecs>','time between db compaction', cfg.db.compact_interval)
+       .option('-d, --dbfile <file>','json database file to use', path.join(cfg.baseDir, 'data', cfg.db.file))
+       .option('-D, --debug', 'enable debugging output', cfg.server.debug)
+       .option('-m,--oui-file <file>','Specify the OUI JSON database',path.join(cfg.baseDir, 'data', cfg.oui.file))
+       //.option('-U,--update-oui','Manually update the IEEE OUI registry')
 
 program.parse(process.argv)
 
 var data = {
-  lastSynced: new Date(),
   clients: {},
-  devs: { ap: [], sta: [], ssid: [] },
-  db: {},
   sensors: {},
+  channels: [],
+  db: {},
+
+  devs: { ap: [], sta: [], ssid: [], vendors: [], rtl: [] },
+
   location: { lon: 0, lat: 0, sats: 0 },
-  stats: { packets: 0, errors: 0, cpu: 0, dbsize: 0,
-           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0
-         },
-  info: { start_time: new Date(), port: program.port,
-          hostname: os.hostname(), versions: process.versions,
-          user: os.userInfo(), pid: process.pid, version: program.version()
+
+  stats: { packets: 0, errors: 0, cpu: 0, dbsize: 0, rtl: 0,
+           memory: 0, aps: 0, ssids: 0, stas: 0, vendors: 0,
+           runtime: 0 },
+
+  info: { uptime: os.uptime(), start_time: new Date(), port: program.port,
+          user: os.userInfo(), pid: process.pid, version: program.version(),
+          hostname: os.hostname(), versions: process.versions, debug: cfg.server.debug
         },
-}
+  config: cfg.server,
+},
 
-//const logger = require('../modules/logger.js')
- 
-console.info(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`)
+  syncTimer = null
 
-if(cfg.db.enabled && cfg.db.autoload) {
+const logger = require('logger.js')
+var log = logger.log,
+  error = logger.error,
+  debug = logger.debug,
+  lastlog = logger.lastlog
+
+if(program.verbose)
+  logger.verbose()
+
+log(`Loading Signal Monitor version ${data.info.version} on ${data.info.hostname}`)
+
+if(cfg.db.enabled) {
+  log(`Devices: Owned: ${Object.keys(cfg.devices.owned).length} Ignore: ${Object.keys(cfg.devices.ignore).length}` +
+      `Alert: ${Object.keys(cfg.devices.alert).length} Track: ${Object.keys(cfg.devices.track).length}`)
+  log(`Saving: Unfamiliar: ${cfg.device.prune_unfamiliar} Unknown: ${cfg.device.prune_unknowns} AP: ${cfg.device.prune_aps} ` +
+      `Clients: ${cfg.device.prune_clients}`)
+  log(`Syncing every ${cfg.db.sync_interval / 1000} seconds.`)
+
   store.load(program.dbfile)
+
+  //var start_read = new Date()
 
   store.read((err, docs) => {
     if(err) {
-      console.error(err);
+      error(err);
       program.exit(2);
     }
-  
+
     docs.forEach(doc => {
-      data.db[doc.mac] = doc
-      data.db[doc.mac].sessions = new deviceSession(false, doc.sessions.sessions)
+      data.db[doc.mac] = new wifiDevice(false, doc)
+      // now handled above
+      //data.db[doc.mac].sessions = new deviceSession(false, doc.sessions.sessions)
 
       if(doc.type == 'ap') data.devs.ap.push(doc.mac)
       else if(doc.type == 'sta') data.devs.sta.push(doc.mac)
       if(!data.devs.ssid.includes(doc.ssid)) data.devs.ssid.push(doc.ssid)
     })
 
-    console.info(`Loaded ${Object.keys(data.db).length} devices`)
-    // somehow this still misses a few dozen of the first packets sent
-    // before it loads data.db ...
+    //var end_read = new Date()
 
+    log(`Loaded ${Object.keys(data.db).length} devices`)
+    // somehow this still misses a few dozen of the first packets sent
+    // before it loads data.db ... but it probably merges them.. i think?
   })
+
+  //store.on('compaction.done', () => { debug('compacting done') })
 }
 
 function updateStats() {
-  data.stats.dbsize = fs.statSync(cfg.baseDir+cfg.db.file).size
+  data.stats.dbsize = fs.statSync(path.join(cfg.baseDir, 'data', cfg.db.file)).size
   data.stats.aps = data.devs.ap.length
   data.stats.ssids = data.devs.ssid.length
   data.stats.stas = data.devs.sta.length
+  data.stats.vendors = data.devs.vendors.length
 
   data.stats.cpu = process.cpuUsage()
   data.stats.memory = process.memoryUsage()
+
+  data.stats.runtime = getDuration((new Date().getTime() - new Date(data.info.start_time).getTime())) || 'wot?'
   data.stats.uptime = getDuration(os.uptime() * 1000)
+
+  if(data.config != cfg.server)
+    data.config = cfg.server
 }
 
 // I want to do new wifiRecord or something, and put in seperate library
@@ -92,45 +133,36 @@ function newWifiDevice(packet) {
   const vendor = getVendor(packet.mac)
   const now = new Date()
   
-  packet.vendor = vendor[0]
-  packet.vendorSm = vendor[1]
-  packet.macSm = packet.mac.substr(12,14).replace(':','')
-  
   var tmp = new wifiDevice(packet)
 
-  tmp.sessions = new deviceSession(packet)
+  //tmp.sessions = new deviceSession(packet)
   
   // if being re-loaded vs newly instantiated
-  if(packet.hasOwnProperty('sensors'))
+  /*if(packet.hasOwnProperty('sensors'))
     tmp.sensors = packet.sensors
   else
     tmp.sensors = [packet.sensor]
-      
-  // shouldn't be needed anymore
-  //if((tmp.channel === 0) || (tmp.channel === undefined))
-  //  tmp.channel = tmp.recvchan || 0 // ??
-
-  if(packet.rftype[0] === 0) {
-    if(packet.rftype[1] == 8) {
-      var booted = packet.uptime
-       if(booted)
-         tmp.uptime = new Date().getTime() - new Date(booted).getTime()
+  */
+  if(tmp.type == 'ap') { //packet.rftype[0] === 0) { if(packet.rftype[1] == 8) {
+      /*var booted = packet.uptime
+      if(booted)
+        tmp.uptime = new Date().getTime() - new Date(booted).getTime()
        
-      tmp.type = 'ap'
-      console.info(`+ AP '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi}`)
+      tmp.type = 'ap' */
+      log(`+ AP '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} chan ${tmp.channel} rssi ${tmp.rssi}`)
 
-      tmp.enctype = packet.enctype
+      // now held in packet.beacons
+      /*tmp.enctype = packet.enctype
       tmp.cyphertype = packet.cyphertype
       tmp.rates = packet.rates
-      tmp.extrarates = packet.extrarates
+      tmp.extrarates = packet.extrarates */
 
-    } else if(packet.rftype[1] == 4) {
-      console.info(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
-      tmp.type = 'sta'
+    } else if(tmp.type == 'sta') { //packet.rftype[1] == 4) {
+      log(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.lastrssi} seq ${tmp.seq}`)
+      //tmp.type = 'sta'
       tmp.hosts.push(tmp.ssid)
-    }
   } else { // if(packet.rftype[0] == 2) {
-    console.info(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
+    log(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
     tmp.type = 'sta'
 
     tmp.hosts.push(tmp.ssid)
@@ -138,15 +170,19 @@ function newWifiDevice(packet) {
 
   if(!data.devs[tmp.type].includes(tmp.mac))
     data.devs[tmp.type].push(tmp.mac)
-  
+
   if(!data.devs.ssid.includes(tmp.ssid))
     data.devs.ssid.push(tmp.ssid)
-  
+
+  if(tmp.vendor != 'Unknown' && (!data.devs.vendors.includes(tmp.vendor)))
+    data.devs.vendors.push(tmp.vendor)
+
   return tmp
 }
 
 function readWifiPacket(msg) {
   const now = new Date()
+
   try {
     var packet = msg.data
     var sensor = msg.sensor
@@ -154,26 +190,35 @@ function readWifiPacket(msg) {
     data.location = msg.location
     
     if(data.sensors.hasOwnProperty(sensor)) {
-      data.sensors[sensor].packets += 1
+      /*data.sensors[sensor].totalPackets += 1
       data.sensors[sensor].lastseen = now
-      data.sensors[sensor].location = { lon: packet.lon, lat: packet.lat }
+      data.sensors[sensor].location = { lon: packet.lon, lat: packet.lat }*/
+      data.sensors[sensor].update(packet)
     }
     else {
-      data.sensors[sensor] = { lastseen: now,
+      data.sensors[sensor] = new Sensor(packet)
+      /*data.sensors[sensor] = { lastseen: now,
                                firstseen: now,
-                               packets: 1 }
+                               totalPackets: 1,
+                               stats: {},
+                               info: {},
+                               osinfo: {},
+                               config: {},
+                               location: {},
+                               }*/
     }
-    
-    if(packet.rftype[0] == 0 && packet.rftype[1] == 8 && (!data.devs.ap.includes(packet.mac)))
+
+    if(packet.type == 'ap' && (!data.devs.ap.includes(packet.mac)))
       data.db[packet.mac] = newWifiDevice(packet) // ap beacon
 
-    else if(packet.rftype[0] == 0 && packet.rftype[1] == 4 && (!data.devs.sta.includes(packet.mac)))
+    else if(packet.type == 'sta' && (!data.devs.sta.includes(packet.mac)))
       data.db[packet.mac] = newWifiDevice(packet) // probe request
-      
-    else if(packet.rftype[0] == 2) { // data packet
+
+    else {
+      // if(packet.rftype[0] == 2) { // data packet
       var dst = packet.dst
       var src = packet.src
-          
+
       if(data.devs.ap.includes(src)) {
         packet.mac = dst
         packet.ssid = data.db[src].ssid
@@ -196,130 +241,96 @@ function readWifiPacket(msg) {
               data.db[src] = newWifiDevice(packet)
           }
       }
-    } else if(data.db.hasOwnProperty(packet.mac)) {
+    } 
+    
+    if(data.db.hasOwnProperty(packet.mac)) {
       var output = []
 
-      // -> tagDevice
-      if(!data.db[packet.mac].tags.includes('loud') && (data.db[packet.mac].hosts.length > cfg.server.loud_client_min))
-        data.db[packet.mac].tags.push('loud')
-      var duration = (now.getTime() - data.db[packet.mac].lastseen.getTime())
+      output = data.db[packet.mac].update(packet)
+      data.sensors[sensor].update(packet)
       
-      // has been seen in (4) minutes, extend session exit
-      // second time seen
-      if(duration < cfg.server.session_length )
-        data.db[packet.mac].sessions.extend(packet)
-      
-      // was seen (10) minutes ago, lets see how long he was here
-      if(duration > (cfg.server.session_length * 2)) {
-        var enter = data.db[packet.mac].sessions.last().enter
-        var exit = data.db[packet.mac].sessions.last().exit
-        
-        var dwelled = new Date(exit).getTime() - new Date(enter).getTime()
-
-        // if dwelled for more than a session length and has returned, tag, and create a new sessoin
-        // however, should simply extend that session, or see how it looks in a chart, could be regular device
-
-        if(dwelled > cfg.server.session_length)
-          if(!data.db[packet.mac].tags.includes('session'))
-            data.db[packet.mac].tags.push('session')
-         
-        //if(now.getTime() - exit < (cfg.server.session_length * 4)
-        // don't really start a new session
-        //if(now.getTime() - exit < 3600000) // one hour
-        // regular 
-        //console.log(`Last session: ${new Date(enter).toLocaleString()}   for  approx.  ${getDuration(dwelled)}`)
-
-        data.db[packet.mac].sessions.add(packet)
-        
-        if(data.devs.ap.includes(packet.mac))
-          output.push(`> AP '${data.db[packet.mac].ssid}'`)
-        else {
-          output.push(`> STA '${data.db[packet.mac].macSm}'`)
-            if(packet.rftype[1] == 4)
-              output.push('probed')
-            else if(packet.rftype[0] == 2)
-              output.push('on')
-            else
-              output.push(`${packet.rftype[0]}:${packet.rftype[1]}`)
-          
-            output.push(`'${packet.ssid}'`)
-        }
-        
-        output.push(`from ${packet.sensor} type ${data.db[packet.mac].vendorSm}`)
-        output.push(`gone ${getDuration(duration)} rssi ${packet.rssi}`)
-        
-        if(data.devs.ap.includes(packet.mac))
-          output.push(`seq ${packet.seq}`)
-        /*{
-          var booted = new Date(packet.uptime)
-          var uptime = now.getTime() - booted.getTime()
-          output.push(`Up ${getDuration(uptime)}`)
-        }
-        else*/ 
-
-        // seen before, tag repeat/session
-        if(!data.db[packet.mac].tags.includes['repeat'])
-          data.db[packet.mac].tags.push('repeat')
-
-        console.info(output.join(' '))
-      }
-
-      // no longer a new device
-      if(data.db[packet.mac].tags.includes('new') && (now - data.db[packet.mac].firstseen < ( 10 * 60 * 1000)))
-        data.db[packet.mac].tags.splice(data.db[packet.mac].tags.indexOf('new'),1)
-
-      data.db[packet.mac].location = { lon: packet.lon, lat: packet.lat }
-      data.db[packet.mac].lastseen = new Date(packet.time)
-      data.db[packet.mac].rssi = packet.rssi
-      data.db[packet.mac].seq = packet.seq
-
-      data.db[packet.mac].totalPackets += 1
-      data.db[packet.mac].totalBytes += packet.len
-      
-      if(data.db[packet.mac].type == 'sta' && (!data.db[packet.mac].hosts.includes(packet.ssid)))
-        data.db[packet.mac].hosts.push(packet.ssid)
-        //if(data.devs.includes(packet.ssid) && 
- 
-      try{if(!data.db[packet.mac].sensors.includes(packet.sensor))
-        data.db[packet.mac].sensors.push(packet.sensor)}catch(e) {console.error('sensors...');console.log(data.db[packet.mac])}
-
+      if(output.lost.length || output.lastseen.length || data.db[packet.mac].tags.includes('track'))
+        log(`${output.dir} ${output.type.toUpperCase()} '${output.name}' ${output.action} from ${sensor} type ${data.db[packet.mac].vendorSm} rssi ${packet.rssi} seq ${packet.seq} lost ${data.db[packet.mac].lostPackets} ${output.lastseen}`)
       data.stats.packets += 1
+    
     } else {
-      console.error(`Capture: Unrecognized device or packet type: ${JSON.stringify(packet.rftype)} ${packet.mac}`)
+      error(`Capture: Unrecognized device or packet type: ${JSON.stringify(packet.rftype)} ${packet.mac}`)
       console.dir(packet)
       return
     }
   } catch (e) {
-    console.error(`Decode Packet: ${e}`)
+    error(`Decode Packet: ${e}`)
+    //error(JSON.stringify(data.db[packet.mac].sessions))
     data.stats.errors += 1
   }
 }
-  
-function syncDB() {
-  store.sync(data.db, (err, docs) => { if(err) { console.error(`Syncing: ${err}`) } })
-  data.lastSynced = new Date()
+
+function readSDRPacket(msg) {
+  var packet = new rtlDevice(msg)
+  var sensor = msg.sensor
+  var now = new Date()
+
+  data.location = msg.location
+  data.stats.rtl += 1
+    if(data.sensors.hasOwnProperty(sensor)) {
+      data.sensors[sensor].update(packet)
+      /*data.sensors[sensor].totalPackets += 1
+      data.sensors[sensor].lastseen = now
+      data.sensors[sensor].location = { lon: packet.lon, lat: packet.lat }*/
+    } else {
+      data.sensors[sensor] = new Sensor(packet)
+                           /*  { lastseen: now,
+                               firstseen: now,
+                               totalPackets: 1,
+                               stats: {},
+                               info: {},
+                               config: {},
+                               location: {},
+                               osinfo: {}, } */
+    }
+
+  log(packet)
 }
 
-function latest(since) {
+function syncDB() {
+  // promise ..
+  if(program.verbose)
+    log(`syncing DB: ${Object.keys(data.db).length} devices`)
+  store.sync(data.db, (err, docs) => {
+    if(err)
+      error(`Syncing: ${err}`)
+    /*else {
+      if(typeof docs === 'number')
+        data.info.lastupdated += Object.keys(docs).length
+      else if(typeof docs == 'object')
+        data.info.lastadded += parseInt(docs)
+    }*/
+  })
+}
+
+function latest(since=cfg.ws.subscribe_interval) {
   var out = {}
-  updateStats()
   
+  updateStats()
   
   Object.keys(data.db).forEach(k => {
     var dev = data.db[k]
 
     if(new Date().getTime() - new Date(dev.lastseen).getTime() <= since)
-      out[k] = data.db[k]
+      out[k] = dev
   })
   
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
-const wss = new WS.Server({ port: program.port})
- 
-console.info(`Listening on port ${program.port}`)
 
-var syncTimer = setInterval(syncDB, program.syncInterval)
+
+if(cfg.oui.update)
+  fs.stat(path.join(cfg.baseDir,'data',cfg.oui.file), utils.updateOUI)
+
+const wss = new WS.Server({ port: program.port })
+ 
+log(`Listening on port ${program.port}`)
 
 wss.on('connection', (ws, req) => {
   const ip = req.connection.remoteAddress
@@ -329,52 +340,80 @@ wss.on('connection', (ws, req) => {
 
   if(!data.clients.hasOwnProperty(id))
     data.clients[id] = { mode: null, host: ip, port: port,
-                    firstseen: new Date(), lastseen: new Date() }
+                    firstseen: new Date(), lastseen: new Date() , timer: {} }
                     
 
-  console.info(`Connection from ${id}}`)
+  log(`Connection from ${id}}`)
   
   ws.on('message', message => {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-    //console.info(`Message from ${id} / ${message}`)
+    //log(`Message from ${id} / ${message}`)
     
     try {
       var msg = JSON.parse(message)
     } catch (e) {
-      console.error(`Bad message format from ${id}: ${message}`)
+      error(`Bad message format from ${id}: ${message}`)
       return
     }
 
+    if(data.clients[id].mode === null) {
+      if(msg.hasOwnProperty('sensor') && msg.hasOwnProperty('source'))
+        data.clients[id].mode = `${msg.source}.sensor`
+      else
+      if(msg.hasOwnProperty('client'))
+        data.clients[id].mode = `${msg.client}`
+    }
+
     data.clients[id].lastseen = new Date()
-    
+
     if(msg.hasOwnProperty('type')) {
-      if(msg.type == 'data') {
-        readWifiPacket(msg)
+      if(msg.type == 'data' && msg.hasOwnProperty('source')) {
+        if(msg.source == 'wifi')
+          readWifiPacket(msg)
+        else
+        if(msg.source == 'sdr')
+          readSDRPacket(msg)
       } else
-      if(msg.type == 'log') {
-        //read_log(msg)
+      if(msg.type == 'log' && msg.hasOwnProperty('sensor') && msg.hasOwnProperty('data')) {
+        msg.data.forEach(line => { log(`${msg.sensor}: ${line.log}`) })
+        //log(`${msg.sensor}: ${JSON.stringify(msg.data)}}`)
       } else
       if (msg.type == 'status') {
-        //setStatus(msg)
+        if(data.sensors.hasOwnProperty(msg.sensor)) {
+          data.sensors[msg.sensor].info = msg.data.info
+          data.sensors[msg.sensor].stats = msg.data.stats
+          data.sensors[msg.sensor].osinfo = msg.data.osinfo
+          data.sensors[msg.sensor].location = msg.location
+          data.sensors[msg.sensor].config = msg.data.config
+          data.sensors[msg.sensor].lastseen = new Date()
+        } else {
+          //error(`Unknown message ${msg.type} from ${msg.sensor} with length ${msg.data.length}`)
+        }
       } else
       if (msg.type == 'time') {
-        //checkTime(msg)
+        // if arg, do smt
+        ws.send(JSON.stringify({ type: time, data: new Date() }))
       }
     } else
     if(msg.hasOwnProperty('cmd')) {
-      if (msg.cmd == 'stream') {
-        if(msg.hasOwnProperty('arg')) {
-          if(msg.arg == 'start') {}
-          else if(msg.arg == 'stop') {}
+      if(msg.cmd == 'channels') {
+        if(msg.hasOwnProperty('sensor')) {
+          log(`Received channel list from ${id}: ${msg.data}`)
+          data.channels = data.channels.concat(msg.data)
         }
-      } else
+        else {
+          log(`Sending channel list to ${id}`)
+          ws.send(JSON.stringify({type: 'channels', data: data.channels }))
+        }
+      }
+      else
       if (msg.cmd == 'latest') {
         var duration
         
         if(msg.hasOwnProperty('arg'))
           duration = parseInt(msg.arg)
         else
-          duration = cfg.server.ws.subscribe_interval
+          duration = cfg.ws.subscribe_interval
         
         ws.send(JSON.stringify({ type: 'latest', location: data.location,
                                  time: new Date(), data: latest(duration)}))
@@ -391,72 +430,111 @@ wss.on('connection', (ws, req) => {
       } else
       if (msg.cmd == 'dump') {
         updateStats()
-        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: { db: data.db, sensors: data.sensors,
+        // maybe foreach ws.send maxpktsize ..
+        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: { db: decycle(data.db), sensors: decycle(data.sensors),
                                                                          stats: data.stats, info: data.info, location: data.location  } }))
       } else
+      // find mac=xxx, ssid=xxx
       if (msg.cmd == 'find') {
-        if(!msg.hasOwnProperty('query') || !msg.hasOwnProperty('what')) {
-          console.error(`Bad find command from ${id}`)
+        if(!msg.hasOwnProperty('arg') || !msg.arg.search('=')) {
+          error(`Bad find command from ${id}`)
+          return
         }
-        
-        var type = msg.what
-        var query = msg.query
 
-        sendResults = (err, res) => {
+        var args = msg.arg.split('=')
+
+        var sendResults = (err, res) => {
           if(err === null)
-            ws.send(JSON.stringify({ type: 'search', time: new Date(), data: res }))
+            ws.send(JSON.stringify({ type: 'result', field: args[0], query: args[1], time: new Date(), data: res }))
           else
-            console.error(`Search: ${err}`)
+            error(`Search: ${err}`)
         }
         
-        store.find(type, query, sendResults)
+        store.find(args[0], args[1], sendResults)
       } else
       if (msg.cmd == 'subscribe') {
-        console.info(`New Subscriber: ${id}`)
+        var subType
+        log(`New Subscriber: ${id}`)
         
-        // subscribe to latest, subscribe to logs, subscribe to status
-        // subscribe to location, etc
-        if(msg.hasOwnProperty('arg'))
-          duration = parseInt(msg.arg)
+        // subscribe to latest, logs, status, location, etc
+        if(msg.hasOwnProperty('type'))
+          subType = msg.type
         else
-          duration = cfg.server.ws.subscribe_interval 
-        
-        data.clients[id].timer = setInterval(() => { 
-          const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-          
-          if (ws.readyState === WS.OPEN) {
-            ws.send(JSON.stringify({ type: 'latest', time: new Date(),
-                                     location: data.location,
-                                     data: latest(duration)}))
-          } else {
-            console.debug(`Connection closed, terminating ${id}`)
-            try {
-              ws.terminate()
-              
-              if(data.clients[id].hasOwnProperty('timer')) {
-                clearInterval(data.clients[id].timer)
-                delete data.clients[id].timer
-              }
-            } catch(e) {
-              console.error(`Terminating connection: ${e}`)
-          }
+          subType = 'latest'
+
+        if(msg.hasOwnProperty('arg')) {
+          if(['logs','latest','status','location'].includes(msg.arg))
+            subType = msg.arg
+          else
+            duration = parseInt(msg.arg)
         }
+        else
+          duration = cfg.ws.subscribe_interval 
         
-        }, cfg.server.ws.subscribe_interval) 
+        if(subType == 'logs') {
+          data.clients[id].timer.logs = setInterval(() => { 
+            const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+            
+            if (ws.readyState === WS.OPEN) {
+              var lines = lastlog()
+              if(lines.length)
+                ws.send(JSON.stringify({ type: 'log', data: lines }))
+            } else {
+              //debug(`Connection closed, terminating log subscription to ${id}`)
+              //console.dir(data.clients)
+              clearInterval(data.clients[id].timer.logs)
+              delete data.clients[id].timer.logs
+              ws.terminate()
+            }
+          }, cfg.ws.subscribe_logs)
+        } else
+        if(subType == 'latest') {
+          data.clients[id].timer.latest = setInterval(() => { 
+            const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+            
+            if (ws.readyState === WS.OPEN) {
+              var output = latest()
+              ws.send(JSON.stringify({ type: 'latest', time: new Date(),
+                                       location: data.location,
+                                       data: decycle(output)}))
+            } else { //debug(`Connection closed, terminating latest subscription to ${id}`)
+              //console.dir(data.clients)
+              clearInterval(data.clients[id].timer.latest)
+              delete data.clients[id].timer.latest
+              ws.terminate()
+            }
+          }, cfg.ws.subscribe_interval) 
+          
+          var output = latest()
+          ws.send(JSON.stringify({ type: 'latest', time: new Date(),
+                                   location: data.location,
+                                   data: decycle(output) }))
         
-        ws.send(JSON.stringify({ type: 'latest', time: new Date(),
-                                 location: data.location,
-                                 data: latest(cfg.server.ws.subscribe_interval)}))
-        
+        }
       } else
       if (msg.cmd == 'unsubscribe') {
-        if(data.clients[id].hasOwnProperty('timer')) {
-          clearInterval(data.clients[id].timer)
-          delete data.clients[id].timer
-        }
+        clearInterval(data.clients[id].timer.latest)
       }
     } else {
-      console.error(`Invalid packet: ${message}`)
+      error(`Invalid packet: ${message}`)
     }
   })
 })
+
+function cleanExit(reason=420) {
+  syncDB()
+  
+  console.warn(`exiting: ${reason}`)
+
+  wss.close()
+  
+  error(`Exiting by request - ${reason}.`)
+  log('Good bye.')
+
+  process.exit(reason)
+}
+
+if(cfg.db.enabled)
+  syncTimer = setInterval(syncDB, program.syncInterval)
+
+cleanup(cleanExit)
