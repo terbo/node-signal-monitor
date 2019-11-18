@@ -21,7 +21,8 @@ const fs      = require('fs'),
       process = require('process'),
       logger  = require('logger'),
      hostname = os.hostname(),
-      cleanup = require('sigmon.utils').Cleanup
+      utils  = require('sigmon.utils'),
+      cleanup = utils.Cleanup
 
 var  streams = [],
   statusTimer = null,
@@ -101,71 +102,65 @@ function packet_cb(buf) {
 
     // I think this is the channel the receiver was on when the packet was captured
     pkt.freq    = packet.payload.frequency
-    pkt.rcvchan = getChannel(packet.payload.frequency)
-    pkt.channel = 0
+    pkt.channel = getChannel(packet.payload.frequency)
     pkt.mac     = rf.shost.toString().toLowerCase()
     pkt.seq     = rf.fragSeq
     pkt.lon     = gps.location.lon
     pkt.lat     = gps.location.lat
+    pkt.bssid   = rf.bssid.toString()
+    pkt.src     = rf.shost.toString()
+    pkt.dst     = rf.dhost.toString()
 
-    if(rf.type == 0 && [1,3,5,8].includes(rf.subType)) {
-      pkt.type == 'ap'
-      //pkt.beacon = rf.beacon.tags
+    try {
+      if(rf.type === 0 && [1,3,5,8].includes(parseInt(rf.subType))) {
+        //logger.debug(`AP packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
+        pkt.type = 'ap'
+        //pkt.beacon = rf.beacon.tags
 
-      for(var tags in rf.beacon.tags) {
-        var tag = rf.beacon.tags[tags]
-      
-        if(tag.type == 'channel' && parseInt(tag.channel) > 0)
-          pkt.channel = parseInt(tag.channel) 
-        
-        if(tag.type == 'ssid' && tag.ssid.length)
-          pkt.ssid = tag.ssid.toLocaleString()
-        
-        /*if(tag.type == 'ERP')
-          pkt.enctype = tag.value.readInt8()
-          if(enctype === 0)
-            pkt.enctype = 'OPN'
-          else if(enctype == 1)
-            pkt.enctype = 'WEP'
-          else if(enctype == 2)
-            pkt.enctype = 'WPA'
+        if((rf.subType == 8) && rf.hasOwnProperty('beacon') && rf.beacon.hasOwnProperty('tags'))
+          for(var tags in rf.beacon.tags) {
+            var tag = rf.beacon.tags[tags]
 
-        if(tag.type == 'RSN')
-          pkt.cyphertype = tag.value
-        
-        if(tag.type == 'rates')
-          try {
-            pkt.boottime = tag.value.readInt32LE()
-            pkt.uptime = new Date() - new Date(pkt.boottime)
-          } catch (e) {
-            logger.debug(`cannot read uptime of ${pkt.mac}: ${tag.value}`)
+            if(tag.type == 'channel' && parseInt(tag.channel) > 0)
+              pkt.channel = parseInt(tag.channel) 
+
+            if(tag.type == 'ssid' && tag.ssid.length)
+              pkt.ssid = tag.ssid.toLocaleString()
+
+            if(tag.type == 'rates')
+              try {
+                pkt.boottime = tag.value.readInt32LE()
+                pkt.uptime = new Date() - new Date(pkt.boottime)
+              } catch (e) { }
           }
-        
-        if(tag.type == 'extrarates')
-          pkt.extrarates = tag.value
-        
-          */
-      }
-    } else
-    if (rf.type == 0 && [0,2,4,10].includes(rf.subType)) {
-      pkt.type == 'sta'
-      //pkt.probe = rf.probe.tags
+      } else
+      if (rf.type === 0 && [0,2,4,10].includes(parseInt(rf.subType))) {
+        //logger.debug(`STA packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
+        pkt.type = 'sta'
+        //pkt.probe = rf.probe.tags
 
-      for(var tags in rf.probe.tags) {
-        var tag = rf.probe.tags[tags]
-      
-        if(tag.type == 'ssid' && tag.ssid.length)
-          pkt.ssid = tag.ssid
-        }
-    } else { // if (rf.type == 2) {
-      pkt.dst = rf.dhost.toString()
-      pkt.src = rf.shost.toString()
-    } //else // ignoring some number of packets for the moment
-    //  return
+        if((rf.subType == 4) && rf.hasOwnProperty('probe') && rf.probe.hasOwnProperty('tags'))
+          for(var tags in rf.probe.tags) {
+            var tag = rf.probe.tags[tags]
+          
+            if(tag.type == 'ssid' && tag.ssid.length)
+              pkt.ssid = tag.ssid
+          }
+      } else {
+        
+        if(!utils.validmac(pkt.src) || !utils.validmac(pkt.dst)) // || !utils.validmac(pkt.bssid))
+          return
+
+        //logger.debug(`Unknown packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
+      }
+    } catch (e) {
+        logger.log(`Reading tags: ${e}`)
+        console.dir(rf)
+    }
     
     if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.len <= 1) ||
       ((pkt.ssid[0] == '\u0000') && (pkt.ssid[pkt.ssid.length - 1] == '\u0000')))
-      if([1,3,5,8].include(rf.subType))
+      if([1,3,5,8].includes(rf.subType))
         pkt.ssid = '[hidden]'
       else if([0,2,4].includes(rf.subType))
         pkt.ssid = '[any]'
@@ -177,7 +172,12 @@ function packet_cb(buf) {
     data.stats.packets += 1
     data.stats.totalBytes += pkt.len
   } catch (e) {
-    return data.stats.errors += 1
+    if(!String(e).startsWith('Not enough of packet left') &&
+       !String(e).startsWith('RangeError')) {
+      logger.debug(`packet_cb: ${e}`)
+      //console.dir(e)
+      return data.stats.errors += 1
+    }
   }
 }
 
@@ -281,7 +281,7 @@ ws.addEventListener('message', message => {
         if(['log','error'].includes(arg))
           streams.push(arg)
       else
-      if(msg.type == 'stopstream' && msg.hasOwnProperty(arg) && streams.include(msg.type))
+      if(msg.type == 'stopstream' && msg.hasOwnProperty(arg) && streams.includes(msg.type))
         streams.splice(stream.indexOf(msg.type,1))
       else
       if(cfg.remote.includes(msg.type) && (msg.type == 'osshutdown' || msg.type == 'osreboot')) {
