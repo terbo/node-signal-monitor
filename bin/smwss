@@ -132,36 +132,15 @@ function updateStats() {
 function newWifiDevice(packet) {
   const vendor = getVendor(packet.mac)
   const now = new Date()
-  
+
   var tmp = new wifiDevice(packet)
 
-  //tmp.sessions = new deviceSession(packet)
-  
-  // if being re-loaded vs newly instantiated
-  /*if(packet.hasOwnProperty('sensors'))
-    tmp.sensors = packet.sensors
-  else
-    tmp.sensors = [packet.sensor]
-  */
-  if(tmp.type == 'ap') { //packet.rftype[0] === 0) { if(packet.rftype[1] == 8) {
-      /*var booted = packet.uptime
-      if(booted)
-        tmp.uptime = new Date().getTime() - new Date(booted).getTime()
-       
-      tmp.type = 'ap' */
+  if(tmp.type == 'ap') {
       log(`+ AP '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} chan ${tmp.channel} rssi ${tmp.rssi}`)
-
-      // now held in packet.beacons
-      /*tmp.enctype = packet.enctype
-      tmp.cyphertype = packet.cyphertype
-      tmp.rates = packet.rates
-      tmp.extrarates = packet.extrarates */
-
-    } else if(tmp.type == 'sta') { //packet.rftype[1] == 4) {
+  } else if(tmp.type == 'sta') {
       log(`+ Probe '${tmp.macSm}' for '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.lastrssi} seq ${tmp.seq}`)
-      //tmp.type = 'sta'
       tmp.hosts.push(tmp.ssid)
-  } else { // if(packet.rftype[0] == 2) {
+  } else {
     log(`+ STA '${tmp.macSm}' on '${tmp.ssid}' from ${packet.sensor} type ${tmp.vendorSm} rssi ${tmp.rssi} seq ${tmp.seq}`)
     tmp.type = 'sta'
 
@@ -186,73 +165,55 @@ function readWifiPacket(msg) {
   try {
     var packet = msg.data
     var sensor = msg.sensor
-    
+
     data.location = msg.location
-    
-    if(data.sensors.hasOwnProperty(sensor)) {
-      /*data.sensors[sensor].totalPackets += 1
-      data.sensors[sensor].lastseen = now
-      data.sensors[sensor].location = { lon: packet.lon, lat: packet.lat }*/
+
+    if(data.sensors.hasOwnProperty(sensor))
       data.sensors[sensor].update(packet)
-    }
-    else {
+    else
       data.sensors[sensor] = new Sensor(packet)
-      /*data.sensors[sensor] = { lastseen: now,
-                               firstseen: now,
-                               totalPackets: 1,
-                               stats: {},
-                               info: {},
-                               osinfo: {},
-                               config: {},
-                               location: {},
-                               }*/
-    }
 
     if(packet.type == 'ap' && (!data.devs.ap.includes(packet.mac)))
-      data.db[packet.mac] = newWifiDevice(packet) // ap beacon
+      data.db[packet.mac] = newWifiDevice(packet) // ap
 
     else if(packet.type == 'sta' && (!data.devs.sta.includes(packet.mac)))
-      data.db[packet.mac] = newWifiDevice(packet) // probe request
+      data.db[packet.mac] = newWifiDevice(packet) // probe
 
     else {
-      // if(packet.rftype[0] == 2) { // data packet
-      var dst = packet.dst
-      var src = packet.src
+      if(data.devs.ap.includes(packet.src)) {
+        packet.mac = packet.dst
+        packet.ssid = data.db[packet.src].ssid
 
-      if(data.devs.ap.includes(src)) {
-        packet.mac = dst
-        packet.ssid = data.db[src].ssid
-        
-        if(!data.db[src].hosts.includes(dst)) {
-          data.db[src].hosts.push(dst)
-              
-          if(!data.db.hasOwnProperty(dst))
-            data.db[dst] = newWifiDevice(packet)
+        if(!data.db[packet.src].hosts.includes(packet.dst)) {
+          data.db[packet.src].hosts.push(packet.dst)
+
+          if(!data.db.hasOwnProperty(packet.dst))
+            data.db[packet.dst] = newWifiDevice(packet)
         }
       } else
-        if (data.devs.ap.includes(dst)) {
-          packet.mac = src
-          packet.ssid = data.db[dst].ssid
-          
-          if(!data.db[dst].hosts.includes(src)) {
-            data.db[dst].hosts.push(src)
-              
-            if(!data.db.hasOwnProperty(src))
-              data.db[src] = newWifiDevice(packet)
-          }
+        if (data.devs.ap.includes(packet.dst)) {
+          packet.mac = packet.src
+          packet.ssid = data.db[packet.dst].ssid
+
+          if(!data.db[packet.dst].hosts.includes(packet.src)) {
+            data.db[packet.dst].hosts.push(packet.src)
+
+            if(!data.db.hasOwnProperty(packet.src))
+              data.db[packet.src] = newWifiDevice(packet)
+        }
       }
-    } 
-    
+    }
+
     if(data.db.hasOwnProperty(packet.mac)) {
       var output = []
 
       output = data.db[packet.mac].update(packet)
       data.sensors[sensor].update(packet)
-      
+
       if(output.lost.length || output.lastseen.length || data.db[packet.mac].tags.includes('track'))
         log(`${output.dir} ${output.type.toUpperCase()} '${output.name}' ${output.action} from ${sensor} type ${data.db[packet.mac].vendorSm} rssi ${packet.rssi} seq ${packet.seq} lost ${data.db[packet.mac].lostPackets} ${output.lastseen}`)
       data.stats.packets += 1
-    
+
     } else {
       error(`Capture: Unrecognized device or packet type: ${JSON.stringify(packet.rftype)} ${packet.mac}`)
       console.dir(packet)
@@ -310,16 +271,16 @@ function syncDB() {
 
 function latest(since=cfg.ws.subscribe_interval) {
   var out = {}
-  
+
   updateStats()
-  
+ 
   Object.keys(data.db).forEach(k => {
     var dev = data.db[k]
 
     if(new Date().getTime() - new Date(dev.lastseen).getTime() <= since)
       out[k] = dev
   })
-  
+ 
   return { sensors: data.sensors, info: data.info, stats: data.stats, db: out }
 }
 
@@ -329,7 +290,7 @@ if(cfg.oui.update)
   fs.stat(path.join(cfg.baseDir,'data',cfg.oui.file), utils.updateOUI)
 
 const wss = new WS.Server({ port: program.port })
- 
+
 log(`Listening on port ${program.port}`)
 
 wss.on('connection', (ws, req) => {
@@ -341,14 +302,14 @@ wss.on('connection', (ws, req) => {
   if(!data.clients.hasOwnProperty(id))
     data.clients[id] = { mode: null, host: ip, port: port,
                     firstseen: new Date(), lastseen: new Date() , timer: {} }
-                    
+
 
   log(`Connection from ${id}}`)
-  
+
   ws.on('message', message => {
     const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
     //log(`Message from ${id} / ${message}`)
-    
+
     try {
       var msg = JSON.parse(message)
     } catch (e) {
@@ -409,14 +370,14 @@ wss.on('connection', (ws, req) => {
       else
       if (msg.cmd == 'latest') {
         var duration
-        
+
         if(msg.hasOwnProperty('arg'))
           duration = parseInt(msg.arg)
         else
           duration = cfg.ws.subscribe_interval
-        
-        ws.send(JSON.stringify({ type: 'latest', location: data.location,
-                                 time: new Date(), data: latest(duration)}))
+
+        ws.send(JSON.stringify({ type: 'latest', location: decycle(data.location),
+                                 time: new Date(), data: decycle(latest(duration))}))
       } else
       if (msg.cmd == 'status') {
         updateStats()
@@ -449,13 +410,13 @@ wss.on('connection', (ws, req) => {
           else
             error(`Search: ${err}`)
         }
-        
+
         store.find(args[0], args[1], sendResults)
       } else
       if (msg.cmd == 'subscribe') {
         var subType
         log(`New Subscriber: ${id}`)
-        
+
         // subscribe to latest, logs, status, location, etc
         if(msg.hasOwnProperty('type'))
           subType = msg.type
@@ -470,11 +431,11 @@ wss.on('connection', (ws, req) => {
         }
         else
           duration = cfg.ws.subscribe_interval 
-        
+
         if(subType == 'logs') {
           data.clients[id].timer.logs = setInterval(() => { 
             const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-            
+
             if (ws.readyState === WS.OPEN) {
               var lines = lastlog()
               if(lines.length)
@@ -491,7 +452,7 @@ wss.on('connection', (ws, req) => {
         if(subType == 'latest') {
           data.clients[id].timer.latest = setInterval(() => { 
             const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
-            
+
             if (ws.readyState === WS.OPEN) {
               var output = latest()
               ws.send(JSON.stringify({ type: 'latest', time: new Date(),
@@ -504,12 +465,12 @@ wss.on('connection', (ws, req) => {
               ws.terminate()
             }
           }, cfg.ws.subscribe_interval) 
-          
+
           var output = latest()
           ws.send(JSON.stringify({ type: 'latest', time: new Date(),
                                    location: data.location,
                                    data: decycle(output) }))
-        
+
         }
       } else
       if (msg.cmd == 'unsubscribe') {
@@ -523,11 +484,11 @@ wss.on('connection', (ws, req) => {
 
 function cleanExit(reason=420) {
   syncDB()
-  
+
   console.warn(`exiting: ${reason}`)
 
   wss.close()
-  
+
   error(`Exiting by request - ${reason}.`)
   log('Good bye.')
 
