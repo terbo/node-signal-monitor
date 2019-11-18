@@ -21,7 +21,7 @@ node-red leaflet map           -- |
 
 Incomplete code, beware.
 
-Further information: [wiki](https://github.com/terbo/node-signal-monitor/wiki/Overview)
+Further information: [Wiki](https://github.com/terbo/node-signal-monitor/wiki)
 
 Install/Setup: [Setup](https://github.com/terbo/node-signal-monitor/wiki/Setup)
 
