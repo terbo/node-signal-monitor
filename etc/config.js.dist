@@ -2,9 +2,6 @@
   all configuraturable options for each program and module.
   this will be seperated into json and yaml files soon.
 
-  you mainly need to change the baseDir, hostname, gps and sensor settings.
-
-
   current top level objects:
 
   baseDir - the full root directory location of the sigmon files, configs and data.
@@ -52,9 +49,9 @@ const
   fs   = require('fs')
   
   config = {
-    version: '0.0.19a',
+    version: '0.0.19b',
     
-    baseDir: './',           /* Change this */
+    baseDir: '.',           /* Change this */
     
     device: {
       new_timeout: 120000,              /*  Devices are no longer 'new' after 2 minutes of being seen   */
@@ -83,6 +80,7 @@ const
       file: 'sigmon.db',                /*  Moved to data/ directory                                    */
       sync_interval: 50000,             /*  Save every 50 seconds                                       */
       compact_interval: 40000,          /*  Uniqify db file every sync_interval - 10 seconds by default */
+      server: '127.0.0.1:27017',         /*  WIP */
       hostname: '127.0.0.1',
       port: 27017,
     },
@@ -119,11 +117,11 @@ const
     gps: {                              /*  If one sensor manages multiple interfaces, how would we     */
       enabled: false,                   /*  distinguish their location/orientation, e.g. having two     */
       auto_connect: false,              /*  directional antennas for gleaning better location info?     */
-      hostname: '127.0.0.1',            /*  if they return their heading name them sensor-orientation   */
+      hostname: '127.0.0.1',             /*  if they return their heading name them sensor-orientation   */
       port: 2947,
       reconnect_delay: 3000,
-      latitude: 0,                      /*  Set static location                                         */
-      longitude: 0, 
+      latitude: 0,              /*  Set static location                                         */
+      longitude: 0,
       events: 'tpv,sky',                /*  Only watch for location and sattelite gps packets           */
     },
       
@@ -144,7 +142,7 @@ const
         channel: 1,                     /*  Fixed channel used when not hopping */
         dwell: 300,                     /*  airodump sleeps for 200ms but running iwconfig repeatedly   */
                                         /*  some machines get bogged down, like raspberry pis           */
-        binary: '/sbin/iw',             /*  Command to run to change channels                           */
+        binary: '/sbin/iw',       /*  Command to run to change channels                           */
       },
     },
 
@@ -161,21 +159,21 @@ const
     },
    
     console: {                          /*  Maybe some settings for the blessed/ncurses UI              */
-      sound: true,                     /*  Use some kismet/netstumbler sound feedback?                 */
+      sound: false,                     /*  Use some kismet/netstumbler sound feedback?                 */
       speech: false,                    /*  *WIP* Speech output of specified stats                      */
       speech_binary: '/usr/bin/espeak', /*  TTS binary                                                  */
       debug: true,
 
       sensor_colors: ['yellow','cyan','red','white','blue','green','magenta'], // random colors for sensors
-      // these are all the same ...
+      default_layout: 'large',
       layouts: {
         'large': {
             scr:  {r: 10, c: 11},
-            status1:  {h: 0, w: 0, x: 1, y: 6},
-            status2:  {h: 0, w: 5, x: 1, y: 8},
+            status1:  {h: 0, w: 0, x: 1, y: 4},
+            status2:  {h: 0, w: 4, x: 1, y: 4},
             devTable:  {h: 1, w: 0, x: 6, y: 10},
-            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
-            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
+            chanbar24:  {h: 3, w: 11, x: 0, y: 0, barWidth: 12, barSpacing: 12, offset: 11, maxHeight: 1},
+            chanbar58:  {h: 3, w: 11, x: 3, y: 0, barWidth: 5, barSpacing: 5, offset: 11, maxHeight: 1},
             pktGraph:  {h: 6, w: 0, x: 4, y: 11},
             logger:  {h: 3, w: 8, x: 7, y: 0},
             info: {h: 10, w: 3, x: 0, y: 8},
@@ -186,33 +184,33 @@ const
           },
 
         'medium': {
-            scr:  {r: 10, c: 11},
-            status1:  {h: 0, w: 0, x: 1, y: 6},
-            status2:  {h: 0, w: 5, x: 1, y: 8},
-            devTable:  {h: 1, w: 0, x: 8, y: 10},
-            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
-            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
-            pktGraph:  {h: 6, w: 0, x: 4, y: 11},
-            logger:  {h: 1, w: 8, x: 9, y: 0},
-            info: {h: 10, w: 3, x: 0, y: 8},
-            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 6, 24],
+            scr:  {r: 9, c: 10},
+            status1:  {h: 0, w: 0, x: 1, y: 3},
+            status2:  {h: 0, w: 3, x: 1, y: 3},
+            devTable:  {h: 1, w: 0, x: 5, y: 6},
+            chanbar24:  {h: 2, w: 9, x: 0, y: 0, barWidth: 5, barSpacing: 5, offset: 4, maxHeight: 1},
+            chanbar58:  {h: 2, w: 9, x: 2, y: 0, barWidth: 4, barSpacing: 4, offset: 3, maxHeight: 1},
+            pktGraph:  {h: 4, w: 0, x: 3, y: 9},
+            logger:  {h: 2, w: 6, x: 6, y: 0},
+            info: {h: 8, w: 2, x: 0, y: 6},
+            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 0, 0],
             devTb: {w: '60%', h: '50%'},
             sBox: {w: '50%', h: 'shrink'},
             sRes: {w: '50%', h: 'shrink'},
           },
 
         'small': {
-            scr:  {r: 10, c: 11},
-            status1:  {h: 0, w: 0, x: 1, y: 6},
-            status2:  {h: 0, w: 5, x: 1, y: 8},
-            devTable:  {h: 1, w: 0, x: 8, y: 10},
-            chanbar24:  {h: 3, w: 11, x: 0, y: 0},
-            chanbar58:  {h: 3, w: 11, x: 3, y: 0},
-            pktGraph:  {h: 6, w: 0, x: 4, y: 11},
-            logger:  {h: 1, w: 8, x: 9, y: 0},
-            info: {h: 10, w: 3, x: 0, y: 8},
-            devTbCols: [4, 9, 18, 20, 4, 3, 10, 10, 4, 6, 24],
-            devTb: {w: '60%', h: '50%'},
+            scr:  {r: 8, c: 10},
+            status1:  {h: 0, w: 0, x: 1, y: 4},
+            status2:  {h: 0, w: 3, x: 1, y: 3},
+            devTable:  {h: 1, w: 0, x: 5, y: 7},
+            chanbar24:  {h: 2, w: 8, x: 0, y: 0, barWidth: 3, barSpacing: 3, offset: 2, maxHeight: 1},
+            chanbar58:  {h: 2, w: 8, x: 2, y: 0, barWidth: 2, barSpacing: 3, offset: 2, maxHeight: 1},
+            pktGraph:  {h: 4, w: 0, x: 2, y: 8},
+            logger:  {h: 2, w: 6, x: 6, y: 0},
+            info: {h: 8, w: 2, x: 0, y: 6},
+            devTbCols: [2, 7, 18, 18, 4, 3, 10, 10, 0, 0, 0],
+            devTb: {w: '100%', h: '50%'},
             sBox: {w: '50%', h: 'shrink'},
             sRes: {w: '50%', h: 'shrink'},
           }
@@ -220,7 +218,7 @@ const
     },
 
     oui: {                              
-      update: true,                     /*  *WIP* Automatically update the IEEE OUI device registry     */
+      update: true,                     /*  Automatically update the IEEE OUI device registry           */
       interval: 7,                      /*  This database is frequently updated, default checks weekly  */
       file: 'oui.json',
     },
