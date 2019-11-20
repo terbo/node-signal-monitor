@@ -12,7 +12,7 @@ const WS      = require('ws'),
       program = require('commander'),
       utils = require('sigmon.utils'),
 
-      ws_commands  = 'stream latest status sensors dump find subscribe unsubscribe channels'.split(' '),
+      ws_commands  = 'stream latest logs status sensors dump find subscribe unsubscribe channels'.split(' '),
       dev_commands = 'owned ignored alert track'.split(' '),
 
       commands = ws_commands.concat(dev_commands)
@@ -56,9 +56,13 @@ if(program.args.length >= 2)
 const ws = new WS(`ws://${cfg.ws.hostname}:${cfg.ws.port}/ws`)
 
 if (commands.includes(cmd)) {
+  if(cmd == 'logs')
+    cmd = 'subscribe',
+    args = 'logs'
+
   if(cmd == 'subscribe')
     program.oneShot = false
-  
+
   if(dev_commands.includes(cmd)) {
       if(args) { console.dir(utils.checkDevice(cmd, args)) }
           else { console.dir(utils.checkDevice(cmd)) }
@@ -67,7 +71,7 @@ if (commands.includes(cmd)) {
 
   ws.on('open', () => {
     console.log(`Sending command ${cmd}`)
-    ws.send(JSON.stringify({cmd: cmd, arg: args, client: program.name}))
+    ws.send(JSON.stringify({cmd: cmd, arg: args, client: program.name()}))
   })
 
   ws.on('message', (message) => {
@@ -79,7 +83,7 @@ if (commands.includes(cmd)) {
         console.info(msg.data[0].log)
       } else
       console.info(JSON.stringify(JSON.parse(message),null,4))
-    
+
     if(program.oneShot) {
       ws.close()
       process.exit(0)
