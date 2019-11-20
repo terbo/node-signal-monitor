@@ -56,9 +56,10 @@ if(program.args.length >= 2)
 const ws = new WS(`ws://${cfg.ws.hostname}:${cfg.ws.port}/ws`)
 
 if (commands.includes(cmd)) {
-  if(cmd == 'logs')
-    cmd = 'subscribe',
+  if(cmd == 'logs') {
+    cmd = 'subscribe'
     args = 'logs'
+  }
 
   if(cmd == 'subscribe')
     program.oneShot = false
@@ -82,7 +83,7 @@ if (commands.includes(cmd)) {
         var msg = JSON.parse(message)
         console.info(msg.data[0].log)
       } else
-      console.info(JSON.stringify(JSON.parse(message),null,4))
+      console.info(JSON.stringify(JSON.parse(message),null,2))
 
     if(program.oneShot) {
       ws.close()
