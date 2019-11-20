@@ -42,8 +42,8 @@ const extend   = require('extend'),
             WS = require('ws')
 
 const wifiChannels = require('wifi.protocol').frequencies,
-       checkDevice = utils.checkDevice,
        getDuration = utils.getDuration,
+            Sensor = require('device.sensor'),
      deviceSession = require('device.session').deviceSession
 
 program.name('sigmon.console.client')
@@ -52,6 +52,7 @@ program.name('sigmon.console.client')
 
 program.option('-s, --hostname <server>', 'sigmon server to connect to', cfg.ws.hostname)
        .option('-p, --port <port>', 'port to connect to', cfg.ws.port)
+       .option('-l, --layout <layout>', 'layout to use', cfg.console.default_layout)
        .option('-A, --alert <mac/ssid>', 'display alerts for devices', cfg.devices.alert)
        .option('-T, --track <mac/ssid>', 'display detailed information for devices', cfg.devices.track)
        .option('-I, --ignore <mac/ssid>', 'ignore devices', cfg.devices.ignore)
@@ -89,7 +90,7 @@ var sortType     = 2,
 var devices_grid, deviceTable, graphics_grid1, graphics_grid2, status1_markdown, status2_markdown, device_markdown,
     status1, status2, server_log, packet_graph, channel_bar24, channel_bar58, device_markdown, status_info, keys, info_log
 
-var dim = cfg.console.layouts.large
+var dim = cfg.console.layouts[program.layout]
 
 // Dimensions for table - yaml?
 
@@ -108,7 +109,6 @@ const deviceHeaders = ['Type', 'Sensors', 'MAC', 'SSID', 'RSSI', 'Ch', 'Vendor',
 
 // static, morse codes, trunks, sattelites, then
 playwav('sigmon.signon')
-
 
 
 function sortByType(a,b) {
@@ -153,7 +153,7 @@ function sortSSID(a,b) {
   if(devices[a].ssid.toUpperCase() > devices[b].ssid.toUpperCase())
     if(reverse) return -1
     else return 1
-  
+
   if(devices[a].ssid.toUpperCase() < devices[b].ssid.toUpperCase())
     if(reverse) return 1
     else return -1
@@ -217,24 +217,19 @@ function update() {
 
     dev.tags = devices[mac].tags
 
-    /*if(checkDevice('alert', mac, dev.ssid)) {
-      status1.log('ALERT device ' + mac)
+    if(dev.tags.includes('ignore'))
+      return
+
+    if(dev.tags.includes('alert')) {
+      status1.log(`ALERT device ${mac}`)
       playwav('alert')
       status1.log(`${mac} seen @ ${now}`)
-      if(!dev.tags.includes('alert'))
-        dev.tags.push('alert')
     } 
-
-    if(checkDevice('ignore', mac, dev.ssid))
-      return status1.log('Ignored device: ', mac)
-    */
-    if(checkDevice('owned', mac, dev.ssid) && (!dev.tags.includes('owned')))
-      dev.tags.push('owned')
 
     dev.sensors.forEach(sensor => {
       if(!sensor_list.hasOwnProperty(sensor)) {
         playwav('sensor_in')
-        
+
         sensor_list[sensor] = { firstseen: new Date(),
                                 lastseen: new Date(),
                                 totalPackets: 1,
@@ -248,12 +243,12 @@ function update() {
       }
 
       var lastIdx = packetGraph[sensor].x.length - 1 // get the index of the last data column
-      
+
       if(packetGraph[sensor].x[lastIdx] != nowH)
         packetGraph[sensor].x.push(nowH)
-      
+
       var lastCol = packetGraph[sensor].y.length - 1
-      
+
       if(lastCol < lastIdx)
         packetGraph[sensor].y[lastIdx] = 1 // now increase the number of packets
       else
@@ -278,17 +273,17 @@ function update() {
 
     if(filterTypes[filterType] == 'Owned' && (!dev.tags.includes('owned')))
       return
-    
+
     if(displayTypes[displayType] == 'ap' && dev.type != 'ap')
       return
-    
+
     if(displayTypes[displayType] == 'sta' && dev.type != 'sta')
       return
 
     // not being removed
     /*if(nowS < (firstseen + cfg.device.new_timeout) && (!dev.tags.includes('new')))
       dev.tags.push('new')
-    
+
     else if(dev.sessions.sessions.length > 1 && (!dev.tags.includes('session'))) //((firstseen - nowS) > 30000) && (now < (lastseen + 3000)))
       dev.tags.push('session')
 
@@ -296,7 +291,7 @@ function update() {
       dev.tags.push('proximity')
     else if(dev.rssi < cfg.device.far_rssi && (!dev.tags.includes('far')))
       dev.tags.push('far')
-    
+
     if((dev.vendor == 'Unknown' || dev.ssid == '[hidden]') && (!dev.tags.includes('unknown')))
       dev.tags.push('unknown')
     else if(!dev.tags.includes('oui'))
@@ -318,11 +313,11 @@ function update() {
       }
     })
 
-  if(carousel.currPage == 0 && status_info) {
+  if(carousel.currPage === 0 && status_info) {
     var out, out2, running = 0, loc = {},
       mem = hmn(status_info.stats.memory.rss.toPrecision(3)),
       dbsize = hmn(status_info.stats.dbsize.toPrecision(3)) 
-    
+
     if(!gpsLock && (status_info.location.sats >= 5)) {
       playwav('gpslock')
       gpsLock = true
@@ -346,7 +341,7 @@ function update() {
 
     if(loc.lon && loc.lon !== 0)
       loc.lon = Number(loc.lon).toPrecision(7)
-    
+
     if(loc.lat && loc.lat !== 0)
       loc.lat = Number(loc.lat).toPrecision(7)
 
@@ -358,7 +353,7 @@ function update() {
 
     var sensors = '',
             now = new Date()
-    
+
     Object.keys(status_info.sensors).forEach(sensor => {
       sensors += `__${sensor}__ ${hmn(status_info.sensors[sensor].totalPackets)}`
       var last = new Date(status_info.sensors[sensor].lastseen).getTime()
@@ -370,17 +365,17 @@ function update() {
         sensors += '(DC) '
       }
     })
-    
+
     out += `\n ${sensors}`
-    
+
     status1_markdown.setMarkdown(out)
     status2_markdown.setMarkdown(out2)
   }
-  
+
   if(carousel.currPage == 1) {
     if(Object.keys(packetGraph).length)
       packet_graph.setData(Object.values(packetGraph))
-    
+
     try {
       channel_bar24.setData({ titles: channel_list24, data: channelGraph24 })
       channel_bar58.setData({ titles: channel_list58, data: channelGraph58 })
@@ -388,8 +383,8 @@ function update() {
       status1.log(`Channel Graph: ${e}`)
     }
   }
-  
-  if(redraw && carousel.currPage == 0)
+
+  if(redraw && carousel.currPage === 0)
     try {
       deviceTable.setData({ headers: deviceHeaders, data: rows})
     }
@@ -405,10 +400,13 @@ function drawInfo(mac) {
       out
 
   if(!drawJSON) {
-    out =  `${dev.mac} ${dev.vendor}\n`
-           
+    out =  ` MAC:  ${dev.mac}\n` +
+           ` Vendor:  ${dev.vendor}\n\n`
+
            if(dev.type == 'ap') {
-             out += ` SSID: ${dev.ssid} (Channel ${dev.channel})\n`
+             out += ` SSID: ${dev.ssid}\n` +
+                    ` Channel ${dev.channel} (${dev.freq} Mhz)\n`
+
              var uptime = 0
              if(dev.hasOwnProperty('boottime'))
                 uptime = getDuration(new Date() - new Date(dev.boottime))
@@ -422,33 +420,32 @@ function drawInfo(mac) {
     out += ` First seen: ${new Date(dev.firstseen).toLocaleString()}\n` +
            ` Last seen: ${new Date(dev.lastseen).toLocaleString()}\n\n` +
 
-           ` Last RSSI/Seq# ${dev.rssi}/${dev.seq}\n`
-           
-    out += ` Seen by: ${dev.sensors.toString()}\n\n` +
+           ` Last/Avg/Min/Max RSSI ${dev.lastrssi}/${dev.avgrssi}/${dev.minrssi}/${dev.maxrssi}\n` +
+           ` Last Seq#: ${dev.lastseq}\n\n`
+
+    out += ` Seen by: ${dev.sensors.join(', ')}\n\n` +
 
            ` Sessions: ${dev.sessions.sessions.length}\n`;
 
     if(dev.sessions.sessions.length) {
       dev.sessions = new deviceSession(false, dev.sessions.sessions)
-      out += `  Enter: ${new Date(dev.sessions.first().enter).toLocaleString()}\n` +
-             `  Exit: ${new Date(dev.sessions.first().exit).toLocaleString()}: ` +
-             getDuration(new Date(dev.sessions.first().exit).getTime() -
-             new Date(dev.sessions.first().enter).getTime()) + '\n\n'
+      out += `  Duration: ${getDuration(new Date(dev.sessions.first('duration')))}\n` +
+             `  Enter: ${new Date(dev.sessions.first().enter).toLocaleString()}\n` +
+             `  Exit: ${new Date(dev.sessions.first().exit).toLocaleString()}\n`
 
       if(dev.sessions.sessions.length > 1)
-        out += `  Enter: ${new Date(dev.sessions.last().enter).toLocaleString()}\n` +
-               `  Exit: ${new Date(dev.sessions.last().exit).toLocaleString()}: ` +
-               getDuration(new Date(dev.sessions.last().exit).getTime() -
-                           new Date(dev.sessions.last().enter).getTime()) + '\n\n'
+        out += `  Duration: ${getDuration(new Date(dev.sessions.last('duration')))}\n` +
+               `  Enter: ${new Date(dev.sessions.last().enter).toLocaleString()}\n` +
+               `  Exit: ${new Date(dev.sessions.last().exit).toLocaleString()}\n`
     }
 
-    out += `  Last location: ${dev.sessions.last(true)}\n\n` +
+    out += `  Last location: ${dev.sessions.last('loc')}\n\n` +
            ` Total Packets/Bytes: ${hmn(dev.totalPackets.toPrecision(2))}/${hmn(dev.totalBytes.toPrecision(2))}\n\n`
 
     if(dev.type == 'ap')
-      out += ` Clients:\n\n`
+      out += ` Clients:\n`
     else
-      out += ` Probed SSIDs:\n\n`
+      out += ` Probed SSIDs:\n`
 
       dev.hosts.forEach(h => {
         if(dev.type == 'ap' && devices.hasOwnProperty(h)) {
@@ -463,18 +460,18 @@ function drawInfo(mac) {
 
   info_log.logLines = []
   out.split('\n').forEach(line => { info_log.log(line) })
-  
+
   status1.log(`Showing info for {bold}${mac}{/}`)
   update()
 }
 
 function do_search(err, data) {
   if (err) throw err;
-  
+
   searchBox.hide()
   var re = new RegExp(data,'i')
   var matches = []
- 
+
   // now need to be able to submit database searches..
   Object.keys(devices).forEach((mac) => { 
     Object.keys(devices[mac]).forEach((field) => {
@@ -485,7 +482,7 @@ function do_search(err, data) {
 
   if(Object.keys(matches).length) {
     status1.log(`Found ${matches.length} matches for {bold}${data}{/}`)
-    
+
     searchBox.hide()
     searchResults.setItems(matches)
     searchResults.show()
@@ -501,7 +498,7 @@ function do_exit(s) {
   screen.program.showCursor()
   screen.program.normalBuffer()
   ws.close()
-  
+
   process.exit(2)
 }
 
@@ -538,7 +535,7 @@ screen.key('s', (ch, key) => {
     return
 
   sortType = (sortType < Object.keys(sortFn).length - 1) ? sortType + 1 : 0
-  
+
   status1.log(`Sorting by ${sortTypes[sortType]}`)
   update()
 })
@@ -546,9 +543,9 @@ screen.key('s', (ch, key) => {
 screen.key('a', (ch, key) => {
   if(carousel.currPage !== 0)
     return 
-  
+
   displayType = displayType < displayTypes.length - 1? displayType + 1 : 0
-  
+
   status1.log(`Displaying ${displayTypes[displayType].toUpperCase()}`)
   update()
 })
@@ -574,12 +571,12 @@ screen.key('i', (ch, key) => {
     return
 
   drawJSON = !drawJSON
-  
+
   if(drawJSON)
     status1.log('Drawing JSON in Info Window')
   else
     status1.log('Drawing Markdown in Info Window')
-  
+
   screen.render()
 })
 
@@ -600,14 +597,14 @@ screen.key('m', (ch, key) => {
 screen.key('z', (ch, key) => {
   if(carousel.currPage !== 0)
     return 
-  
+
   redraw = !redraw
-  
+
   if(redraw)
     status1.log('Redraw enabled')
   else
     status1.log('Redraw disabled')
-  
+
   update()
 })
 
@@ -639,7 +636,7 @@ screen.key('tab', () => {
       logbuf.forEach(line => { status1.log(line) })
     if(infobuf.length)
       infobuf.forEach(line => { info_log.log(line) })
-    
+
     deviceTable.show()
     if(!deviceTable.focused)
       deviceTable.focus()
@@ -667,10 +664,10 @@ screen.key(['1','2'], (ch, key) => {
       try{status1.log(JSON.stringify(logbuf))} catch (e) {}
   }
   status1.log('Switching to channel ' + carousel.currPage)
-  
+
   carousel.currPage = ch - 1
   carousel.move()
-  
+
   redraw = true 
   update()
 })
@@ -687,14 +684,18 @@ var ws = new RWS(`ws://${program.hostname}:${program.port}/ws`, [], { WebSocket:
 
 ws.addEventListener('open', () => {
   status1.log('Connected to websocket ' + program.hostname)
-  ws.send(JSON.stringify({cmd: 'subscribe', client: program.name, arg: 'latest' }))
-  ws.send(JSON.stringify({cmd: 'subscribe', client: program.name, arg: 'logs' }))
-  ws.send(JSON.stringify({cmd: 'channels', client: program.name }))
+  ws.send(JSON.stringify({cmd: 'subscribe', client: program.name(), arg: 'latest' }))
+  ws.send(JSON.stringify({cmd: 'subscribe', client: program.name(), arg: 'logs' }))
+  ws.send(JSON.stringify({cmd: 'channels', client: program.name() }))
+})
+
+ws.addEventListener('error', e => {
+  status1.log(`WS Client: ${e.error}`)
 })
 
 ws.addEventListener('message', message => {
   var msg = JSON.parse(message.data)
-  
+
   if(msg.type == 'channels') {
       status1.log(`got Channels: ${JSON.stringify(msg.data)}`)
       msg.data.forEach(channel => {
@@ -715,7 +716,6 @@ ws.addEventListener('message', message => {
     return
   }
 
-
   var oldnum = Object.keys(devices).length,
       newnum = Object.keys(msg.data.db).length,
       total = 0
@@ -727,14 +727,9 @@ ws.addEventListener('message', message => {
     playwav('packet')
 
   status_info  = { stats: msg.data.stats, info: msg.data.info, sensors: msg.data.sensors, location: msg.data.location || msg.location }
- 
+
   update()
 })
-
-ws.addEventListener('error', e => {
-  status1.log(`WS Client: ${e.error}`)
-})
-
 
     //             //
    /*             */
@@ -744,41 +739,42 @@ ws.addEventListener('error', e => {
 
 
 function devices_page() {
-  devices_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
+  devices_grid = new contrib.grid({ rows: dim.scr.r, cols: dim.scr.c, screen: screen })
 
   status1_markdown = devices_grid.set(dim.status1.h, dim.status1.w, dim.status1.x,dim.status1.y, contrib.markdown, {
     tags: true,
     interactive: false
   })
-  
+
   status2_markdown = devices_grid.set(dim.status2.h, dim.status2.w, dim.status2.x,dim.status2.y, contrib.markdown, {
     tags: true,
     interactive: false
   })
 
-  deviceTable = devices_grid.set(dim.devTable.h, dim.devTable.w, dim.devTable.x,dim.devTable.y, contrib.table,
-     { keys: true,
-       mouse: true,
-       vi: true,
-       tags: true,
-       fg: 'white',
-       selectedFg: 'white',
-       selectedBg: 'blue',
-       label: 'Active',
-       noCellBorders: true,
-       interactive: true,
-       width: dim.devTb.w,
-       height: dim.devTb.h,
-       border: {
-        type: 'ascii',
-        fg: 'cyan'},
-       columnSpacing: 3, // in chars
-       columnWidth: dim.devTbCols })
-  
+  deviceTable = devices_grid.set(dim.devTable.h, dim.devTable.w, dim.devTable.x,dim.devTable.y, contrib.table, {
+    keys: true,
+    mouse: true,
+    vi: true,
+    tags: true,
+    fg: 'white',
+    selectedFg: 'white',
+    selectedBg: 'blue',
+    label: 'Active',
+    noCellBorders: true,
+    interactive: true,
+    width: dim.devTb.w,
+    height: dim.devTb.h,
+    border: {
+     type: 'ascii',
+     fg: 'cyan'},
+    columnSpacing: 3, // in chars
+    columnWidth: dim.devTbCols })
+
   deviceTable.rows.on('select',(i,idx) => {
     try {
       if(i && i.hasOwnProperty('content') && i.content.length) {
-        var selected = i.content.match(/[0-9a-f]{1,2}([\.:-])(?:[0-9a-f]{1,2}\1){4}[0-9a-f]{1,2}/)
+        var selected = i.content.match(/[A-F0-9:]{17}|[A-F0-9]{12}/gi)
+
         if(selected)
           drawInfo(selected[0])
       }
@@ -787,24 +783,22 @@ function devices_page() {
     }
   })
 
-  info_log = devices_grid.set(dim.info.x,dim.info.y, dim.info.h, dim.info.w, contrib.log,
-   {
-     label: 'info',
-     tags: true,
-     bufferLength: 90,
-     scrollBack: 90
-  }
- )
+  info_log = devices_grid.set(dim.info.x,dim.info.y, dim.info.h, dim.info.w, contrib.log, {
+    label: 'info',
+    tags: true,
+    bufferLength: 64,
+    scrollBack: 64,
+  })
 
-  status1 = devices_grid.set(dim.logger.x,dim.logger.y,dim.logger.h,dim.logger.w, contrib.log,
-      { fg: 'green',
-        padding: 1,
-        tags: true,
-     scrollBack: 90,
-     bufferLength: 90,
-        selectedFg: 'green',
-        label: 'log'})
-  
+  status1 = devices_grid.set(dim.logger.x,dim.logger.y,dim.logger.h,dim.logger.w, contrib.log, {
+    fg: 'green',
+    padding: 1,
+    tags: true,
+    bufferLength: 64,
+    scrollBack: 64,
+    selectedFg: 'green',
+    label: 'log'})
+
   deviceTable.show()
   deviceTable.focus()
 
@@ -818,34 +812,34 @@ function devices_page() {
 
 function graphics_page1() {
   graphics_grid1 = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
-  
-  channel_bar24 = graphics_grid1.set(dim.chanbar24.x,dim.chanbar24.y,dim.chanbar24.h,dim.chanbar24.w, contrib.bar,
-       { label: 'Channel Usage - 2.4Ghz',
-         barWidth: 13,
-         barSpacing: 13,
-         xOffset: 11,
-         maxHeight: 1
-       })
 
-  channel_bar58 = graphics_grid1.set(dim.chanbar58.x,dim.chanbar58.y,dim.chanbar58.h,dim.chanbar58.w, contrib.bar,
-       { label: 'Channel Usage - 5.8Ghz',
-         barWidth: 6,
-         barSpacing: 6,
-         xOffset: 4,
-         maxHeight: 1
-       })
-  
-  packet_graph = graphics_grid1.set(dim.pktGraph.h, dim.pktGraph.w, dim.pktGraph.x, dim.pktGraph.y, contrib.line,
-       { style:
-         { line: 'yellow',
-           text: 'green',
-           baseline: 'black'},
-         xLabelPadding: 4,
-         xPadding: 4,
-         showLegend: true,
-         wholeNumbersOnly: true, //true=do not show fraction in y axis
-         label: 'Packets'
-        })
+  channel_bar24 = graphics_grid1.set(dim.chanbar24.x,dim.chanbar24.y,dim.chanbar24.h,dim.chanbar24.w, contrib.bar, {
+    label: 'Channel Usage - 2.4Ghz',
+    barWidth: dim.chanbar24.barWidth,
+    barSpacing: dim.chanbar24.barSpacing,
+    xOffset: dim.chanbar24.offset,
+    maxHeight: dim.chanbar24.maxHeight
+  })
+
+  channel_bar58 = graphics_grid1.set(dim.chanbar58.x,dim.chanbar58.y,dim.chanbar58.h,dim.chanbar58.w, contrib.bar, {
+    label: 'Channel Usage - 5.8Ghz',
+    barWidth: dim.chanbar58.barWidth,
+    barSpacing: dim.chanbar58.barSpacing,
+    xOffset: dim.chanbar58.offset,
+    maxHeight: dim.chanbar58.maxHeight
+  })
+
+  packet_graph = graphics_grid1.set(dim.pktGraph.h, dim.pktGraph.w, dim.pktGraph.x, dim.pktGraph.y, contrib.line, {
+    style: {
+      line: 'yellow',
+      text: 'green',
+      baseline: 'black'},
+    xLabelPadding: 4,
+    xPadding: 4,
+    showLegend: true,
+    wholeNumbersOnly: true, //true=do not show fraction in y axis
+    label: 'Packets'
+  })
 
   screen.append(helpBox)
 }
@@ -875,17 +869,18 @@ var searchResults = blessed.list({
 })
 
 searchResults.on('select',(i,idx) => {
-  try {
-    if(i && i.hasOwnProperty('content') && i.content.length) {
-      var mac = i.content.split(': ')[0]
-      drawInfo(mac)
-      searchResults.hide()
-      deviceTable.focus()
-      screen.render()
+  if(carousel.currPage === 0)
+    try {
+      if(i && i.hasOwnProperty('content') && i.content.length) {
+        var mac = i.content.split(': ')[0]
+        drawInfo(mac)
+        searchResults.hide()
+        deviceTable.focus()
+        screen.render()
+      }
+    } catch (e) {
+      status1.log(`Search: ${e}`)
     }
-  } catch (e) {
-    status1.log(`Search: ${e}`)
-  }
 })
 
 var searchBox = blessed.prompt({
@@ -941,7 +936,7 @@ helpBox.on('keypress', () => {
   deviceTable.focus()
   screen.render()
 })
-  
+
 var carousel = new contrib.carousel(
                     [devices_page, graphics_page1],
                     { screen: screen, interval: 0, controlKeys: false })
