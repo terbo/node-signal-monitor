@@ -9,7 +9,7 @@ var path = require('path'),
 module.paths.unshift(path.join(cfg.baseDir,'lib'))
 
 var gps       = require('gps.client'),
- getChannel   = require('wifi.protocol').getChannel,
+    wifiProto = require('wifi.protocol'),
     hopper    = require('wifi.hopper')
 
 const fs      = require('fs'),
@@ -80,7 +80,7 @@ data.info.remote = program.remote
 
 if(program.debug)
   logger.verbose()
-  
+
 logger.log(`Loading Sigmon WIFI Sensor ${data.info.version}`)
 
 function packet_cb(buf) {
@@ -89,24 +89,31 @@ function packet_cb(buf) {
             rf = packet.payload.ieee802_11Frame,
           pkt  = {}
 
+    if(parseInt(rf.fragSeq) === 0 || parseInt(pkt.fraqSeq) === 65535)
+      return
+
     pkt.sensor  = program.alias
     pkt.iface   = program.iface
     pkt.len     = packet.pcap_header.len
 
     // can also use the tv_usec data, but maybe unreliable?
-    pkt.pktime  = new Date(packet.pcap_header.tv_sec * 1000)
-    pkt.time    = new Date()
+    // just using recieved time on server
+    //pkt.pktime  = new Date(packet.pcap_header.tv_sec * 1000)
+    //pkt.time    = new Date()
 
     pkt.rssi    = packet.payload.signalStrength || 0
     pkt.rftype  = [rf.type, rf.subType]
 
     // I think this is the channel the receiver was on when the packet was captured
     pkt.freq    = packet.payload.frequency
-    pkt.channel = getChannel(packet.payload.frequency)
+    pkt.channel = wifiProto.getChannel(pkt.freq)
+
     pkt.mac     = rf.shost.toString().toLowerCase()
     pkt.seq     = rf.fragSeq
+
     pkt.lon     = gps.location.lon
     pkt.lat     = gps.location.lat
+
     pkt.bssid   = rf.bssid.toString()
     pkt.src     = rf.shost.toString()
     pkt.dst     = rf.dhost.toString()
@@ -115,14 +122,15 @@ function packet_cb(buf) {
       if(rf.type === 0 && [1,3,5,8].includes(parseInt(rf.subType))) {
         //logger.debug(`AP packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
         pkt.type = 'ap'
-        //pkt.beacon = rf.beacon.tags
 
         if((rf.subType == 8) && rf.hasOwnProperty('beacon') && rf.beacon.hasOwnProperty('tags'))
           for(var tags in rf.beacon.tags) {
             var tag = rf.beacon.tags[tags]
 
-            if(tag.type == 'channel' && parseInt(tag.channel) > 0)
+            if(tag.type == 'channel' && parseInt(tag.channel) > 0) {
               pkt.channel = parseInt(tag.channel) 
+              pkt.freq    = wifiProto.getFrequency(pkt.channel)
+            }
 
             if(tag.type == 'ssid' && tag.ssid.length)
               pkt.ssid = tag.ssid.toLocaleString()
@@ -137,34 +145,32 @@ function packet_cb(buf) {
       if (rf.type === 0 && [0,2,4,10].includes(parseInt(rf.subType))) {
         //logger.debug(`STA packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
         pkt.type = 'sta'
-        //pkt.probe = rf.probe.tags
 
         if((rf.subType == 4) && rf.hasOwnProperty('probe') && rf.probe.hasOwnProperty('tags'))
           for(var tags in rf.probe.tags) {
             var tag = rf.probe.tags[tags]
-          
+
             if(tag.type == 'ssid' && tag.ssid.length)
               pkt.ssid = tag.ssid
           }
       } else {
-        
-        if(!utils.validmac(pkt.src) || !utils.validmac(pkt.dst)) // || !utils.validmac(pkt.bssid))
+        if(!utils.validmac(pkt.src) || !utils.validmac(pkt.bssid))
           return
 
         //logger.debug(`Unknown packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
       }
     } catch (e) {
         logger.log(`Reading tags: ${e}`)
-        console.dir(rf)
+        //console.dir(rf)
     }
-    
-    if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.len <= 1) ||
+
+    if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.length <= 1) ||
       ((pkt.ssid[0] == '\u0000') && (pkt.ssid[pkt.ssid.length - 1] == '\u0000')))
       if([1,3,5,8].includes(rf.subType))
         pkt.ssid = '[hidden]'
       else if([0,2,4].includes(rf.subType))
         pkt.ssid = '[any]'
-     
+
     const msg = JSON.stringify({type: 'data', source: 'wifi', interface: program.iface,
                           sensor: program.alias, location: gps.location, data: pkt})
     ws.send(msg)
@@ -209,7 +215,7 @@ function sendStatus() {
 
 function sendLogs() {
   var lines = logger.lastlog()
-  
+
   if(lines.length)
     ws.send(JSON.stringify({ type: 'log', sensor: program.alias, data: lines }))
 }
@@ -225,7 +231,7 @@ sniffer.on('error', (error) => {
 
 ws.addEventListener('open', () => {
   console.debug('Connected to websocket ' + program.hostname)
-  
+
   logTimer = setInterval(sendLogs, cfg.sensor.log_interval)
 
   if(!cfg.gps.enabled) {
@@ -237,7 +243,7 @@ ws.addEventListener('open', () => {
     hopper.set_channel(program.channel)
   else
     hopper.start(program.iface)
-  
+
   sniffer.on('packet', packet_cb)
   logger.log('Listening on ' + sniffer.device_name)
 
@@ -249,7 +255,7 @@ ws.addEventListener('open', () => {
 ws.addEventListener('close', () => {
   if(hopper.running)
     hopper.stop()
-  
+
   if(program.disableReconnect)
     cleanExit('disconnected-no-reconnect')
 })
@@ -303,13 +309,13 @@ ws.addEventListener('message', message => {
 
 process.on('beforeExit', cleanExit)
 
-function cleanExit(reason) {
+function cleanExit(reason=420) {
   var output = [`exiting: ${reason}`]
 
   hopper.stop()
 
   if(data.stats.errors) {
-    output.push(`with #errors: #{data.stats.errors}`)
+    output.push(`with #errors: ${data.stats.errors}`)
   }
 
   ws.send(JSON.stringify({type: 'status', stats: data.stats, time: new Date(), data: output.join(' ')}))
@@ -320,7 +326,6 @@ function cleanExit(reason) {
 ws.addEventListener('error', (e) => {
   logger.error(`WebSocket client: ${e.error}`)
 })
-
 
 statusTimer = setInterval(sendStatus, cfg.sensor.status_interval)
 
