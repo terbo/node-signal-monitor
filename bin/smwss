@@ -19,6 +19,7 @@ const utils         = require('sigmon.utils'),
       store         = require('db.nedb'),
       getVendor     = utils.getVendor,
       getDuration   = utils.getDuration,
+      wifiProtocol  = require('wifi.protocol'),
       Sensor        = require('device.sensor').Sensor,
       wifiDevice    = require('device.wifiv2').wifiDevice,
       rtlDevice     = require('device.sdr').rtlDevice,
@@ -169,15 +170,17 @@ function readWifiPacket(msg, id) {
     else
       data.sensors[sensor].update(packet)
 
-    if(!data.devs[packet.type].includes(packet.mac))
-      data.db[packet.mac] = newWifiDevice(packet)
-
-    /*else {
+    if(packet.hasOwnProperty('type')) {
+      if(!data.devs[packet.type].includes(packet.mac))
+        data.db[packet.mac] = newWifiDevice(packet)
+    }
+    else {
       if(data.devs.ap.includes(packet.src)) {
         packet.mac = packet.dst
         packet.ssid = data.db[packet.src].ssid
 
         if(!data.db[packet.src].hosts.includes(packet.dst)) {
+          log(`Adding ${packet.dst} to ${packet.ssid}`)
           data.db[packet.src].hosts.push(packet.dst)
 
           if(!data.db.hasOwnProperty(packet.dst))
@@ -189,25 +192,14 @@ function readWifiPacket(msg, id) {
           packet.ssid = data.db[packet.dst].ssid
 
           if(!data.db[packet.dst].hosts.includes(packet.src)) {
+            log(`Adding ${packet.src} to ${packet.ssid}`)
             data.db[packet.dst].hosts.push(packet.src)
 
             if(!data.db.hasOwnProperty(packet.src))
               data.db[packet.src] = newWifiDevice(packet)
           }
       }
-      else
-        if (data.devs.ap.includes(packet.bssid)) {
-          packet.mac = packet.bssid
-          packet.ssid = data.db[packet.bssid].ssid
-
-          if(!data.db[packet.bssid].hosts.includes(packet.src)) {
-            data.db[packet.bssid].hosts.push(packet.src)
-
-            if(!data.db.hasOwnProperty(packet.src))
-              data.db[packet.src] = newWifiDevice(packet)
-        }
-      }
-    }*/
+    }
 
     if(data.db.hasOwnProperty(packet.mac)) {
       var output = []
@@ -215,13 +207,14 @@ function readWifiPacket(msg, id) {
       output = data.db[packet.mac].update(packet)
       data.sensors[sensor].update(packet)
 
-      if(packet.type == 'ap')
+      /*if(packet.type == 'ap')
         output.client.forEach(mac => {
           if(!data.db[packet.mac].hosts.includes(mac) && data.devs.sta.includes(mac)) {
             log(`Adding client ${mac} to ${packet.ssid}`)
             data.db[packet.mac].hosts.push(mac)
           }
         })
+      */
 
       if(output.lost.length || output.lastseen.length)
         log(`${output.dir} ${data.db[packet.mac].type.toUpperCase()} '${output.name}' ${output.action} from ${sensor} type ${data.db[packet.mac].vendorSm} rssi ${packet.rssi} seq ${packet.seq} ${output.lastseen}`)
@@ -304,7 +297,7 @@ wss.on('connection', (ws, req) => {
   const id = `${ip}_${port}`
 
   if(!data.clients.hasOwnProperty(id))
-    data.clients[id] = { type: null, client: null, host: ip.replace('::ffff:',''), port: port,
+    data.clients[id] = { type: null, client: null, host: ip, port: port,
                     firstseen: new Date(), lastseen: new Date() , timer: {} }
 
 
@@ -361,7 +354,7 @@ wss.on('connection', (ws, req) => {
       }
     } else
     if(msg.hasOwnProperty('cmd')) {
-      if(msg.cmd == 'channels') {
+      /*if(msg.cmd == 'channels') {
         if(msg.hasOwnProperty('sensor')) {
           log(`Received channel list from ${id}: ${msg.data}`)
           var channels = data.channels.concat(msg.data)
@@ -372,7 +365,7 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({type: 'channels', data: data.channels }))
         }
       }
-      else
+      else*/
       if (msg.cmd == 'latest') {
         var duration
 
@@ -381,24 +374,20 @@ wss.on('connection', (ws, req) => {
         else
           duration = cfg.ws.subscribe_interval
 
-        ws.send(JSON.stringify({ type: 'latest', location: decycle(data.location),
-                                 time: new Date(), data: decycle(latest(duration))}))
+        ws.send(JSON.stringify({ type: 'latest', location: decycle(data.location), time: new Date(), data: decycle(latest(duration))}))
       } else
       if (msg.cmd == 'status') {
         updateStats()
-        ws.send(JSON.stringify({ type: 'status', time: new Date(),
-                                 data: { sensors: decycle(data.sensors), stats: decycle(data.stats), info: decycle(data.info), location: decycle(data.location), clients: decycle(data.clients)} }))
+        ws.send(JSON.stringify({ type: 'status', time: new Date(), data: { sensors: decycle(data.sensors), stats: decycle(data.stats), info: decycle(data.info), location: decycle(data.location), clients: decycle(data.clients) } }))
       } else
       if (msg.cmd == 'sensors') {
         updateStats()
         ws.send(JSON.stringify({ type: 'status', time: new Date(), data: { sensors: decycle(data.sensors) } } ))
-
       } else
       if (msg.cmd == 'dump') {
         updateStats()
         // maybe foreach ws.send maxpktsize ..
-        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: { db: decycle(data.db), sensors: decycle(data.sensors),
-                                                                         stats: data.stats, info: data.info, location: data.location  } }))
+        ws.send(JSON.stringify({ type: 'dump', time: new Date(), data: { db: decycle(data.db), sensors: decycle(data.sensors), stats: decycle(data.stats), info: decycle(data.info), location: decycle(data.location)  } }))
       } else
       // find mac=xxx, ssid=xxx
       if (msg.cmd == 'find') {
@@ -437,11 +426,11 @@ wss.on('connection', (ws, req) => {
             duration = parseInt(msg.arg)
         }
         else
-          duration = cfg.ws.subscribe_interval 
+          duration = cfg.ws.subscribe_interval
 
         if(subType == 'logs') {
           data.clients[id].timer.logs = setInterval(() => { 
-            const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+            //const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
 
             if (ws.readyState === WS.OPEN) {
               var lines = lastlog()
@@ -450,15 +439,15 @@ wss.on('connection', (ws, req) => {
             } else {
               //debug(`Connection closed, terminating log subscription to ${id}`)
               //console.dir(data.clients)
-              clearInterval(data.clients[id].timer.logs)
-              delete data.clients[id].timer.logs
+              //clearInterval(data.clients[id].timer.logs)
+              //delete data.clients[id].timer.logs
               ws.terminate()
             }
           }, cfg.ws.subscribe_logs)
         } else
         if(subType == 'latest') {
           data.clients[id].timer.latest = setInterval(() => { 
-            const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
+            //const id = `${ws._socket._peername.address}_${ws._socket._peername.port}`
 
             if (ws.readyState === WS.OPEN) {
               var output = latest()
@@ -467,8 +456,8 @@ wss.on('connection', (ws, req) => {
                                        data: decycle(output)}))
             } else { //debug(`Connection closed, terminating latest subscription to ${id}`)
               //console.dir(data.clients)
-              clearInterval(data.clients[id].timer.latest)
-              delete data.clients[id].timer.latest
+              //clearInterval(data.clients[id].timer.latest)
+              //delete data.clients[id].timer.latest
               ws.terminate()
             }
           }, cfg.ws.subscribe_interval) 
