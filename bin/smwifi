@@ -195,7 +195,7 @@ function updateStats() {
   data.stats.cpu = process.cpuUsage()
   data.stats.memory = process.memoryUsage()
 
-  data.stats.runtime = now - data.info.start_time 
+  data.stats.runtime = now - data.info.start_time
   data.info.uptime = os.uptime()
 
   data.info.debug = program.debug
