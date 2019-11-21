@@ -24,8 +24,7 @@ const fs      = require('fs'),
       utils  = require('sigmon.utils'),
       cleanup = utils.Cleanup
 
-var  streams = [],
-  statusTimer = null,
+var statusTimer = null,
   logTimer = null
 
 let errors = 0
@@ -50,6 +49,7 @@ program.name('sigmon.wifi.sensor')
        .option('-i, --iface <interface>', 'interface to listen on', cfg.wifi.interface)
        .option('-c, --channel <channel>', 'use fixed channel', cfg.wifi.hopper.channel)
        .option('-d, --dwell <ms>', 'set channel hop dwell time', cfg.wifi.hopper.dwell)
+       .option('-F, --filter <pcap filter>', 'use pcap capture filter', cfg.pcap.filter)
        .option('-n, --alias <sensor>', 'name/alias of this sensor', hostname)
        .option('-s, --hostname <hostname>', 'websocket hostname', cfg.ws.hostname)
        .option('-p, --port <port>', 'websocket port', cfg.ws.port)
@@ -119,7 +119,7 @@ function packet_cb(buf) {
     pkt.dst     = rf.dhost.toString()
 
     try {
-      if(rf.type === 0 && [1,3,5,8].includes(parseInt(rf.subType))) {
+      if(rf.type === 0 && [3,5,8,11].includes(parseInt(rf.subType))) {
         //logger.debug(`AP packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
         pkt.type = 'ap'
 
@@ -142,7 +142,7 @@ function packet_cb(buf) {
               } catch (e) { }
           }
       } else
-      if (rf.type === 0 && [0,2,4,10].includes(parseInt(rf.subType))) {
+      if (rf.type === 0 && [1,2,4,10,12].includes(parseInt(rf.subType))) {
         //logger.debug(`STA packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
         pkt.type = 'sta'
 
@@ -154,7 +154,7 @@ function packet_cb(buf) {
               pkt.ssid = tag.ssid
           }
       } else {
-        if(!utils.validmac(pkt.src) || !utils.validmac(pkt.bssid))
+        if(!utils.validmac(pkt.src)) // || !utils.validmac(pkt.bssid))
           return
 
         //logger.debug(`Unknown packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
@@ -222,7 +222,7 @@ function sendLogs() {
 
 
 // preferred: cfg.ws.protocol://cfg.ws.server:cfg.ws.port/cfg.ws.endpoint
-var sniffer = pcap.createSession(program.iface),
+var sniffer = pcap.createSession(program.iface, program.pcapfilter ),
          ws = new RWS(`ws://${program.hostname}:${program.port}/ws`, [], { WebSocket: WS, debug: cfg.ws.debug } )
 
 sniffer.on('error', (error) => {
@@ -261,40 +261,36 @@ ws.addEventListener('close', () => {
 })
 
 ws.addEventListener('message', message => {
-  // type: [ debug | restart | exit | channel | status | log | stream | stopstream | osrestart | osreboot | terminal ]
+  // type: [ (un)track | debug | restart | exit | channel | status | log | osrestart | osreboot | terminal ]
   try {
     var msg = JSON.parse(message)
     //logger.debug(`Message: ${message}`)
 
-    if(msg.hasOwnProperty('type'))
-      if(msg.type == 'debug')
+    if(msg.hasOwnProperty('cmd'))
+      if(msg.cmd == 'debug')
         program.debug = !program.debug
       else
-      if(msg.type == 'restart') {
+      if(msg.cmd == 'filter')
+        program.filter = msg.arg
+      else
+      if(msg.cmd == 'restart') {
         // spawn myself? pm2 restart .. ?
         cleanExit('restart')
       }
-      if(msg.type == 'exit')
+      if(msg.cmd == 'exit')
         cleanExit('requested')
       else
-      if(msg.type == 'status')
+      if(msg.cmd == 'status')
         sendStatus()
       else
-      if(msg.type == 'channel' && msg.hasOwnProperty(arg))
+      if(msg.cmd == 'channel' && msg.hasOwnProperty(arg))
         hopper.set_channel(msg.arg)
       else
-      if(msg.type == 'stream' && msg.hasOwnProperty(arg) && msg.hasownProperty(where))
-        if(['log','error'].includes(arg))
-          streams.push(arg)
-      else
-      if(msg.type == 'stopstream' && msg.hasOwnProperty(arg) && streams.includes(msg.type))
-        streams.splice(stream.indexOf(msg.type,1))
-      else
-      if(cfg.remote.includes(msg.type) && (msg.type == 'osshutdown' || msg.type == 'osreboot')) {
-        require('child_process').spawn(msg.type.slice(2))
-        cleanExit(msg.type)
+      if(cfg.remote.includes(msg.cmd) && (msg.cmd == 'osshutdown' || msg.cmd == 'osreboot')) {
+        require('child_process').spawn(msg.cmd.slice(2))
+        cleanExit(msg.cmd)
       } else
-      if(cfg.remote.includes(msg.type) && msg.type == 'terminal') {
+      if(cfg.remote.includes(msg.cmd) && msg.cmd == 'terminal') {
         logger.debug('@root:/# ')
         // launch an xterm.js process and send back the port
       }
