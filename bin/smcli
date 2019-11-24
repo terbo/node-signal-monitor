@@ -44,7 +44,7 @@ const extend   = require('extend'),
 const wifiChannels = require('wifi.protocol').frequencies,
        getDuration = utils.getDuration,
             Sensor = require('device.sensor').Sensor,
-     deviceSession = require('device.session').deviceSession
+     deviceSession = require('device.session2').deviceSession
 
 program.name('sigmon.console.client')
        .version(cfg.version)
@@ -89,8 +89,8 @@ var sortType     = 2,
 
     logbuf = '', infobuf = ''
 
-var devices_grid, deviceTable, graphics_grid1, graphics_grid2, status1_markdown, status2_markdown, device_markdown, dim,
-    status1, status2, server_log, packet_graph, channel_bar24, channel_bar58, device_markdown, status_info, keys, info_log,
+var devices_grid, deviceTable, graphics_grid1, info_grid, graphics_grid2, status1_markdown, status2_markdown, device_markdown, dim,
+    status1, status2, info_log2, server_log, packet_graph, channel_bar24, channel_bar58, device_markdown, status_info, keys, info_log,
     log_grid
 
 if(cfg.console.layouts.hasOwnProperty(program.layout))
@@ -212,25 +212,49 @@ function update() {
       nowH = now.getHours().toString().padStart(2,0) + ':' +
              now.getMinutes().toString().padStart(2,0) + ':' +
              now.getSeconds().toString().padStart(2,0),
-      nowS = now.getTime()
+      nowS = now.getTime(),
+       idx = 0
 
   channelCategories = [],
-  channelGraph24 = [],
-  channelGraph58 = []
+  channelGraph24 = [ ],
+  channelGraph58 = [ ]
 
   Object.keys(sensor_list).forEach(sensor => {
+    if(!sensor_list[sensor].active)
+      return
+
     if(!packetGraph.hasOwnProperty(sensor)) {
       playwav('sensor_in')
       packetGraph[sensor] = { title: sensor, style: { line: sensor_list[sensor].color  }, x: [], y: [] }
     }
 
+    //packetGraph[sensor].x.push(sensor_list[sensor].graphs.packets.x[sensor_list[sensor].graphs.packets.x.length - 1])
+    //packetGraph[sensor].y.push(sensor_list[sensor].graphs.packets.y[sensor_list[sensor].graphs.packets.y.length - 1])
     packetGraph[sensor].x = sensor_list[sensor].graphs.packets.x
     packetGraph[sensor].y = sensor_list[sensor].graphs.packets.y
 
     channelCategories.push(sensor)
 
-    channelGraph24.push(sensor_list[sensor].channelGraph('g'))
-    channelGraph58.push(sensor_list[sensor].channelGraph('ac'))
+    var chang = sensor_list[sensor].channelGraph('g')
+    var chanac = sensor_list[sensor].channelGraph('ac')
+
+    var b = 0
+    Object.keys(chang).forEach(chan => {
+      if(channelGraph24.length == b)
+        channelGraph24[b] = []
+        channelGraph24[b][idx] = chang[chan]
+        b += 1
+    })
+
+    b = 0
+    Object.keys(chanac).forEach(chan => {
+      if(channelGraph58.length == b)
+        channelGraph58[b] = []
+        channelGraph58[b][idx] = chanac[chan]
+        b += 1
+    })
+
+    idx += 1
   })
 
   Object.keys(sortkeys(devices,{compare: sortFn[sortType]})).forEach(mac => {
@@ -274,7 +298,7 @@ function update() {
         rows.push([ dev.type.toUpperCase(), sensors, dev.mac, dev.ssid.substr(0,20).padEnd(20,' '), dev.rssi, dev.channel,
                    dev.vendorSm, new Date(lastseen).toTimeString().split(' ')[0], dev.hosts.length, hmn(dev.totalBytes.toPrecision(2)), dev.tags.toString()])
       } catch(e) {
-        status1.log(`Draw Device: ${e}`)
+        status1.log(`Draw Device: ${e.stack}`)
       }
     })
 
@@ -300,8 +324,8 @@ function update() {
           ` sorting${reverse ? ' reverse ' : ' '}by ${sortTypes[sortType]}\n` +
           ` ${ !redraw ? '{bold}{red-fg}\t\t\t\t\tPaused updating{/}{/}' : ''}`
 
-    loc.lon = status_info.location.lon || 0
     loc.lat = status_info.location.lat || 0
+    loc.lon = status_info.location.lon || 0
     loc.sats = status_info.location.sats || 0
 
     if(loc.lon && loc.lon !== 0)
@@ -343,8 +367,6 @@ function update() {
     try {
       channel_bar24.setData({ barCategory: channel_list24, stackedCategory: channelCategories, data: channelGraph24 })
       channel_bar58.setData({ barCategory: channel_list58, stackedCategory: channelCategories, data: channelGraph58 })
-      JSON.stringify({ barCategory: channel_list24, stackedCategory: channelCategories, data: channelGraph24 },null,2).split('\n').forEach(line=>{status1.log(line)})
-     // JSON.stringify({ barCategory: channel_list58, stackedCategory: channelCategories, data: channelGraph58 },null,2).split('\n').forEach(line=>{status1.log(line)})
     } catch (e) {
       status1.log(`Channel Graph: ${e}`)
     }
@@ -371,13 +393,10 @@ function drawInfo(mac) {
 
            if(dev.type == 'ap') {
              out += ` SSID: ${dev.ssid}\n` +
-                    ` Channel ${dev.channel} (${dev.freq} Mhz)\n`
+                    ` Channel: ${dev.channel} (${dev.freq} Mhz)\n`
 
-             var uptime = 0
-             if(dev.hasOwnProperty('boottime'))
-                uptime = getDuration(new Date() - new Date(dev.boottime))
-             else
-                uptime = getDuration(new Date() - new Date(dev.uptime))
+             var uptime = getDuration(new Date() - new Date(dev.uptime))
+
              if(uptime)
                out += ` Uptime: ${uptime}\n\n`
              else
@@ -396,19 +415,27 @@ function drawInfo(mac) {
            ` Sessions: ${dev.sessions.sessions.length}\n`;
 
     if(dev.sessions.sessions.length) {
-      dev.sessions = new deviceSession(false, dev.sessions.sessions)
-      out += `  Duration: ${getDuration(new Date(dev.sessions.first('duration')))}\n` +
-             `  Enter: ${new Date(dev.sessions.first().enter).toLocaleString()}\n` +
-             `  Exit: ${new Date(dev.sessions.first().exit).toLocaleString()}\n`
 
-      if(dev.sessions.sessions.length > 1)
-        out += `  Duration: ${getDuration(new Date(dev.sessions.last('duration')))}\n` +
-               `  Enter: ${new Date(dev.sessions.last().enter).toLocaleString()}\n` +
-               `  Exit: ${new Date(dev.sessions.last().exit).toLocaleString()}\n`
+      var sessions = new deviceSession(false, dev.sessions.sessions)
+
+      out += `  Duration: ${getDuration(new Date(sessions.first('duration')))}\n` +
+             `  Enter: ${new Date(sessions.first().enter).toLocaleString()}\n` +
+             `  Exit: ${new Date(sessions.first().exit).toLocaleString()}\n\n`
+
+      if(sessions.sessions.length > 1) {
+        out += `  Duration: ${getDuration(new Date(sessions.last('duration')))}\n` +
+               `  Enter: ${new Date(sessions.last().enter).toLocaleString()}\n` +
+               `  Exit: ${new Date(sessions.last().exit).toLocaleString()}\n\n`
+
+          var last = sessions.last('location')
+          var summary = sessions.summary()
+
+          out += `  Last seen: ${last.sensor} @ ${last.rssi}/${last.lat}/${last.lon}\n\n`
+      }
+
+      out += ` Total Packets/Bytes: ${hmn(dev.totalPackets.toPrecision(2))}/${hmn(dev.totalBytes.toPrecision(2))}\n` +
+             ` Total time seen: ${getDuration(summary.totalDuration)}\n\n`
     }
-
-    out += `  Last location: ${dev.sessions.last('loc')}\n\n` +
-           ` Total Packets/Bytes: ${hmn(dev.totalPackets.toPrecision(2))}/${hmn(dev.totalBytes.toPrecision(2))}\n\n`
 
     if(dev.type == 'ap')
       out += ` Clients:\n`
@@ -621,9 +648,15 @@ screen.key('tab', () => {
     if(!deviceTable.focused)
       deviceTable.focus()
   } else
+    if(carousel.currPage == (carousel.pages.length - 3)) {
+      carousel.next()
+      if(infobuf.length)
+        infobuf.forEach(line => { info_log2.log(line) })
+  } else
     if(carousel.currPage == (carousel.pages.length - 2)) {
       carousel.next()
-      logbuf.forEach(line => { status2.log(line) })
+      if(logbuf.length)
+        logbuf.forEach(line => { status2.log(line) })
   } else
     carousel.next()
 
@@ -638,7 +671,7 @@ screen.key('tab', () => {
 // sensors
 // logs
 
-screen.key(['1','2','3'], (ch) => {
+screen.key(['1','2','3','4'], (ch) => {
   if(carousel.currPage === 0) {
     logbuf = status1.logLines
     infobuf = info_log.logLines
@@ -655,7 +688,12 @@ screen.key(['1','2','3'], (ch) => {
       infobuf.forEach(line => { info_log.log(line) })
   } else
   if(ch == '3') {
-    logbuf.forEach(line => { status2.log(line) })
+    if(infobuf.length)
+      infobuf.forEach(line => { info_log2.log(line) })
+  } 
+  if(ch == '4') {
+    if(logbuf.length)
+      logbuf.forEach(line => { status2.log(line) })
   } 
 
   redraw = true
@@ -676,6 +714,7 @@ ws.addEventListener('open', () => {
   status1.log('Connected to websocket ' + program.hostname)
   ws.send(JSON.stringify({cmd: 'subscribe', client: program.name(), arg: 'latest' }))
   ws.send(JSON.stringify({cmd: 'subscribe', client: program.name(), arg: 'logs' }))
+  ws.send(JSON.stringify({cmd: 'subscribe', client: program.name(), arg: 'sensors' }))
 })
 
 ws.addEventListener('error', e => {
@@ -687,28 +726,32 @@ ws.addEventListener('message', message => {
 
   if(msg.type == 'log') {
     msg.data.forEach((line) => { status1.log(`${line.time}  ${line.source}: ${line.log}`) })
-    return
+  } else
+  if(msg.type == 'sensors') {
+    var idx = 0
+    try{Object.keys(msg.sensors).forEach(sensor => {
+      sensor_list[sensor] = new Sensor(null, msg.sensors[sensor])
+      sensor_list[sensor].color = cfg.console.sensor_colors[idx]
+
+      if(new Date().getTime() - new Date(sensor_list[sensor].lastseen).getTime() > 60000)
+        sensor_list[sensor].active = false
+      idx += 1
+    })} catch(e) { } //status1.log(`Drawing sensors: ${String(e)}`) }
+  } else {
+    var oldnum = Object.keys(devices).length,
+        newnum = Object.keys(msg.data.db).length,
+        total = 0
+
+    extend(true, devices, msg.data.db)
+    total = Object.keys(devices).length
+
+    if(total > oldnum)
+      playwav('packet')
+
+    status_info  = { stats: msg.data.stats, info: msg.data.info, location: msg.data.location || msg.location }
+
+    update()
   }
-
-  var oldnum = Object.keys(devices).length,
-      newnum = Object.keys(msg.data.db).length,
-      total = 0
-
-  extend(true, devices, msg.data.db)
-  total = Object.keys(devices).length
-
-  if(total > oldnum)
-    playwav('packet')
-
-  status_info  = { stats: msg.data.stats, info: msg.data.info, location: msg.data.location || msg.location }
-
-  if(msg.data.hasOwnProperty('sensors'))
-    Object.keys(msg.data.sensors).sort().forEach(sensor => {
-      sensor_list[sensor] = new Sensor(null, msg.data.sensors[sensor])
-      sensor_list[sensor].color = cfg.console.sensor_colors[Object.keys(sensor_list).length - 1]
-    })
-
-  update()
 })
 
     //             //
@@ -753,8 +796,8 @@ function devices_page() {
   deviceTable.rows.on('select',(i,idx) => {
     try {
       if(i && i.hasOwnProperty('content') && i.content.length) {
-        var selected = i.content.match(/[A-F0-9:]{17}|[A-F0-9]{12}/gi)
-
+        var selected = i.content.match(/[0-9a-f]{1,2}([\.:-])(?:[0-9a-f]{1,2}\1){4}[0-9a-f]{1,2}/)
+        //status1.log(selected.toString())
         if(selected)
           drawInfo(selected[0])
       }
@@ -777,7 +820,8 @@ function devices_page() {
     bufferLength: 64,
     scrollBack: 64,
     selectedFg: 'green',
-    label: 'log'})
+    label: 'log'
+  })
 
   deviceTable.show()
   deviceTable.focus()
@@ -796,7 +840,8 @@ function graphics_page1() {
   var boxColors = []
 
   Object.keys(sensor_list).forEach( sensor => {
-    boxColors.push(sensor_list[sensor].color)
+    if(sensor_list[sensor].active)
+      boxColors.push(sensor_list[sensor].color)
   })
 
   channel_bar24 = graphics_grid1.set(dim.chanbar24.x,dim.chanbar24.y,dim.chanbar24.h,dim.chanbar24.w, contrib.stackedBar, {
@@ -836,13 +881,43 @@ function log_page() {
   log_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
 
   status2 = log_grid.set(0, 0, dim.scr.r, dim.scr.c, contrib.log, {
+    scrollable: true,
     fg: 'green',
     padding: 1,
     tags: true,
     bufferLength: 64,
     scrollBack: 64,
     selectedFg: 'green',
-    label: 'log'})
+    interactive: true,
+    keys: true,
+    label: 'log',
+    scrollbar: {
+      bg: 'white',
+      fg: 'red',
+      ch: '*'
+    },
+  })
+
+  status2.focus()
+}
+
+function info_page() {
+  info_grid = new contrib.grid({rows: dim.scr.r, cols: dim.scr.c, screen: screen})
+  info_log2 = info_log = info_grid.set(0, 0, dim.scr.r, dim.scr.c, contrib.log, {
+    scrollable: true,
+    label: 'info',
+    interactive: true,
+    keys: true,
+    tags: true,
+    bufferLength: 96,
+    scrollBack: 96,
+    scrollbar: {
+      bg: 'white',
+      fg: 'red',
+      ch: '*'
+    },
+  })
+  info_log2.focus()
 }
 
 /*function graphics_page2() {
@@ -872,7 +947,7 @@ var searchResults = blessed.list({
 searchResults.on('select',(i,idx) => {
   if(carousel.currPage === 0)
     try {
-      if(i && i.hasOwnProperty('content') && i.content.length) {
+      if(i && i.hasOwnProperty('content')) {
         var mac = i.content.split(': ')[0]
         drawInfo(mac)
         searchResults.hide()
@@ -942,7 +1017,7 @@ channel_list24 = Object.values(wifiChannels['g']).sort((a,b) => { return a - b }
 channel_list58 = Object.values(wifiChannels['ac']).sort((a,b) => { return a - b })
 
 var carousel = new contrib.carousel(
-                    [ devices_page, graphics_page1, log_page ],
+                    [ devices_page, graphics_page1, info_page, log_page ],
                     { screen: screen, interval: 0, controlKeys: false })
 
 carousel.start()
