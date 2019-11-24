@@ -1,4 +1,4 @@
-# node signal monitor v 0.0.19a
+# node signal monitor v 0.0.19b
 
 Simple inspection of WiFi networks & devices
 

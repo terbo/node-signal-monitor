@@ -1,7 +1,7 @@
 {
     "name": "node-signal-monitor",
     "description": "Node Signal Monitor",
-    "version": "0.0.19a",
+    "version": "0.0.19b",
     "private": true,
     "homepage": "https://github.com/terbo/node-signal-monitor",
     "bugs": {
@@ -22,10 +22,10 @@
         "extend": "^3.0.2",
         "get-ip-range": "^2.1.0",
         "human-number": "^1.0.4",
+        "inquirer": "^7.0.0",
+        "ip-range-check": "^0.2.0",
         "js-yaml": "^3.13.1",
         "json-cyclic": "0.0.3",
-        "leaflet": "^1.5.1",
-        "marked-terminal": "^1.7.0",
         "nedb": "^1.8.0",
         "node-gpsd": "^0.3.0",
         "node-wav-player": "^0.1.0",
@@ -34,9 +34,10 @@
         "reconnecting-websocket": "^4.2.0",
         "socketwatcher": "git+https://github.com/bytzdev/node-socketwatcher.git",
         "sort-keys": "4.0.0",
+        "sugarjs": "^0.1.0",
         "tail": "^2.0.3",
+        "touch": "^3.1.0",
         "ws": "^7.1.2",
-        "yaml-lint": "^1.2.4"
     },
     "devDependencies": {
         "marked": "^0.3.19"
