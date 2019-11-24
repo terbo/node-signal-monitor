@@ -29,6 +29,8 @@ var statusTimer = null,
 
 let errors = 0
 
+var devs = {}
+
 var data = {
   location: { lon: 0, lat: 0, sats: 0},
   stats: { errors: 0, packets: 0, location: {},
@@ -49,7 +51,8 @@ program.name('sigmon.wifi.sensor')
        .option('-i, --iface <interface>', 'interface to listen on', cfg.wifi.interface)
        .option('-c, --channel <channel>', 'use fixed channel', cfg.wifi.hopper.channel)
        .option('-d, --dwell <ms>', 'set channel hop dwell time', cfg.wifi.hopper.dwell)
-       .option('-F, --filter <pcap filter>', 'use pcap capture filter', cfg.pcap.filter)
+       .option('-F, --filter <pcap filter>', 'use pcap capture filter', cfg.wifi.pcap.filter)
+       .option('-P, --verbose-packets', 'verbose packet output', cfg.server.verbose_packets)
        .option('-n, --alias <sensor>', 'name/alias of this sensor', hostname)
        .option('-s, --hostname <hostname>', 'websocket hostname', cfg.ws.hostname)
        .option('-p, --port <port>', 'websocket port', cfg.ws.port)
@@ -69,8 +72,8 @@ cfg.wifi.hopper.dwell = program.dwell
 cfg.wifi.hopper.iface = program.iface
 
 program.location = program.location.split(',')
-cfg.gps.longitude = program.location[0]
-cfg.gps.latitude = program.location[1]
+cfg.gps.latitude = program.location[0]
+cfg.gps.longitude = program.location[1]
 
 data.info.interface = program.iface
 data.info.debug = program.debug
@@ -118,6 +121,8 @@ function packet_cb(buf) {
     pkt.src     = rf.shost.toString()
     pkt.dst     = rf.dhost.toString()
 
+    pkt.source  = 'wifi'
+
     try {
       if(rf.type === 0 && [3,5,8,11].includes(parseInt(rf.subType))) {
         //logger.debug(`AP packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
@@ -154,8 +159,10 @@ function packet_cb(buf) {
               pkt.ssid = tag.ssid
           }
       } else {
-        if(!utils.validmac(pkt.src)) // || !utils.validmac(pkt.bssid))
+        if(!devs.hasOwnProperty(pkt.mac))
           return
+        //if(!utils.validmac(pkt.src)) // || !utils.validmac(pkt.bssid))
+        //  return
 
         //logger.debug(`Unknown packet with type ${rf.type}:${rf.subType} from ${pkt.mac}`)
       }
@@ -163,6 +170,9 @@ function packet_cb(buf) {
         logger.log(`Reading tags: ${e}`)
         //console.dir(rf)
     }
+
+    if(!devs.hasOwnProperty(pkt.mac))
+      devs[pkt.mac] = pkt.type
 
     if(!pkt.hasOwnProperty('ssid') || (pkt.hasOwnProperty('ssid') && pkt.ssid.length <= 1) ||
       ((pkt.ssid[0] == '\u0000') && (pkt.ssid[pkt.ssid.length - 1] == '\u0000')))
@@ -173,6 +183,10 @@ function packet_cb(buf) {
 
     const msg = JSON.stringify({type: 'data', source: 'wifi', interface: program.iface,
                           sensor: program.alias, location: gps.location, data: pkt})
+
+    if(program.verbosePackets)
+      console.dir(msg,{depth: 5})
+
     ws.send(msg)
 
     data.stats.packets += 1
@@ -235,7 +249,7 @@ ws.addEventListener('open', () => {
   logTimer = setInterval(sendLogs, cfg.sensor.log_interval)
 
   if(!cfg.gps.enabled) {
-    logger.log(`Using fixed GPS location: ${cfg.gps.longitude}, ${cfg.gps.latitude}`)
+    logger.log(`Using fixed GPS location: ${cfg.gps.latitude}, ${cfg.gps.longitude}`)
     gps = { location: { lat: cfg.gps.latitude, lon: cfg.gps.longitude, sats: 0 } }
   }
 
@@ -264,7 +278,7 @@ ws.addEventListener('message', message => {
   // type: [ (un)track | debug | restart | exit | channel | status | log | osrestart | osreboot | terminal ]
   try {
     var msg = JSON.parse(message)
-    //logger.debug(`Message: ${message}`)
+    logger.debug(`Message: ${message}`)
 
     if(msg.hasOwnProperty('cmd'))
       if(msg.cmd == 'debug')
