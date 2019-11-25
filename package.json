@@ -41,4 +41,5 @@
     "devDependencies": {
         "marked": "^0.3.19"
     }
+    }
 }
