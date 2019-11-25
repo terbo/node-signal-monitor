@@ -38,7 +38,6 @@
         "tail": "^2.0.3",
         "touch": "^3.1.0",
         "ws": "^7.1.2",
-    },
     "devDependencies": {
         "marked": "^0.3.19"
     }
